@@ -1,0 +1,228 @@
+:root {
+  --bg: #12151b;
+  --surface: #171b22;
+  --surface-2: #1c212b;
+  --surface-3: #232936;
+  --border: #2b3240;
+  --text: #e7ebf2;
+  --text-dim: #98a2b3;
+  --accent: #4f8cff;
+  --success: #3fbf7f;
+  --danger: #ff6b6b;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text);
+  background-color: var(--bg);
+
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0.75rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.5rem 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.logo {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(140deg, var(--accent), #7b5cff);
+  color: #fff;
+  font-size: 0.95rem;
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.92rem;
+  cursor: pointer;
+  text-align: left;
+}
+.nav:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.nav.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
+}
+.nav .icon {
+  width: 1.1rem;
+  text-align: center;
+  color: var(--accent);
+}
+.badge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  background: var(--surface-3);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  color: var(--text-dim);
+}
+.spacer {
+  flex: 1;
+}
+.foot {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  padding: 0.4rem 0.7rem;
+}
+
+/* ---- Content ---- */
+.content {
+  overflow-y: auto;
+  padding: 1.75rem 2rem 3rem;
+}
+.loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-dim);
+}
+.view-head {
+  margin-bottom: 1.5rem;
+}
+.view-head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.view-head .sub {
+  margin: 0.25rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+.pill {
+  font-size: 0.72rem;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+/* ---- Controls ---- */
+button {
+  font: inherit;
+  padding: 0.5rem 0.95rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+button:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+button.ghost {
+  background: transparent;
+}
+
+input[type='text'],
+input[type='search'],
+input[type='number'],
+select,
+textarea {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  color: var(--text);
+  width: 100%;
+}
+textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+}
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: 70px 1fr;
+  }
+  .sidebar .brand .name,
+  .nav span:not(.icon):not(.badge) {
+    display: none;
+  }
+}

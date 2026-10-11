@@ -1,0 +1,31 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for the ShareV main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "dialog:default",
+    "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-write-image",
+    "clipboard-manager:allow-read-image",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-picture-read-recursive",
+    "fs:allow-picture-write-recursive",
+    "fs:allow-config-read-recursive",
+    "fs:allow-config-write-recursive",
+    "fs:allow-cache-read-recursive",
+    "fs:allow-cache-write-recursive",
+    "fs:allow-data-read-recursive",
+    "fs:allow-data-write-recursive",
+    "shell:default",
+    "shell:allow-open"
+  ]
+}
