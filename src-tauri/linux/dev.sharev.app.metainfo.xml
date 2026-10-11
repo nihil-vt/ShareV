@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.sharev.app</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>ShareV</name>
+  <summary>Capture, annotate, share and record your screen</summary>
+
+  <description>
+    <p>
+      ShareV is a ShareX-style screen capture and sharing tool for Linux. It
+      captures regions, windows or the full screen and lets you annotate,
+      upload and share the result — and record your screen to video or
+      animated GIF.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Region, window and fullscreen capture with a delay.</li>
+      <li>Annotation editor with arrows, shapes, text, blur and crop.</li>
+      <li>Share to Imgur, a custom HTTP endpoint or a shell command.</li>
+      <li>Record MP4, WebM or animated GIF with system and microphone audio.</li>
+      <li>Capture history and a system tray menu.</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">ShareV.desktop</launchable>
+
+  <url type="homepage">https://github.com/nihil-vt/ShareV</url>
+  <url type="bugtracker">https://github.com/nihil-vt/ShareV/issues</url>
+
+  <developer id="github.com.nihil-vt">
+    <name>nihil-vt</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-10-10">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <provides>
+    <binary>sharev</binary>
+  </provides>
+
+  <categories>
+    <category>Graphics</category>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>screenshot</keyword>
+    <keyword>screen capture</keyword>
+    <keyword>recording</keyword>
+    <keyword>share</keyword>
+    <keyword>annotate</keyword>
+  </keywords>
+</component>

@@ -42,6 +42,8 @@ export const api = {
   recordingStatus: () => invoke<RecordingInfo | null>('recording_status'),
   listAudioDevices: () => invoke<AudioDevice[]>('list_audio_devices'),
 
+  isFlatpak: () => invoke<boolean>('is_flatpak'),
+
   pickDirectory: () => invoke<string | null>('pick_directory'),
 };
 

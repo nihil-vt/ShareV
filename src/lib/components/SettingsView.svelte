@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '../api';
   import { app, loadAudioDevices, saveConfig, toast } from '../state.svelte';
+  import { checkForUpdates, initUpdates, installUpdate, updateProgress, updates } from '../updates.svelte';
   import type { Config } from '../types';
 
   const initial = structuredClone($state.snapshot(app.config)) as Config;
@@ -9,6 +10,7 @@
 
   onMount(() => {
     loadAudioDevices();
+    initUpdates();
   });
 
   const systemDevices = $derived(app.audioDevices.filter((d) => d.monitor));
@@ -257,6 +259,47 @@
     </div>
 
     <div class="card">
+      <h2>Updates</h2>
+      <p class="hint">ShareV {updates.current || '…'}</p>
+
+      {#if updates.flatpak}
+        <p class="hint">
+          Installed as a Flatpak — updates are handled by Flatpak/Flathub.
+        </p>
+      {:else}
+        {#if updates.status === 'checking'}
+          <p class="hint">Checking for updates…</p>
+        {:else if updates.status === 'uptodate'}
+          <p class="hint">You're up to date.</p>
+        {:else if updates.status === 'available'}
+          <p class="hint">Version <b>{updates.version}</b> is available.</p>
+          {#if updates.notes}<pre class="notes">{updates.notes}</pre>{/if}
+        {:else if updates.status === 'downloading'}
+          <p class="hint">Downloading… {updateProgress()}%</p>
+        {:else if updates.status === 'ready'}
+          <p class="hint">Restarting to finish the update…</p>
+        {:else if updates.status === 'error'}
+          <p class="hint error">{updates.error}</p>
+        {:else}
+          <p class="hint">Check GitHub for a newer release.</p>
+        {/if}
+
+        <div class="update-actions">
+          <button
+            class="ghost"
+            onclick={checkForUpdates}
+            disabled={updates.checking || updates.status === 'downloading'}
+          >
+            {updates.status === 'checking' ? 'Checking…' : 'Check for updates'}
+          </button>
+          {#if updates.status === 'available'}
+            <button class="primary" onclick={installUpdate}>Download &amp; install</button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
+    <div class="card">
       <h2>Hotkeys</h2>
       <label class="check">
         <input type="checkbox" bind:checked={draft.hotkeys.enabled} />
@@ -351,5 +394,25 @@
     display: flex;
     gap: 0.6rem;
     margin-top: 1.1rem;
+  }
+  .update-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .notes {
+    margin: 0;
+    padding: 0.6rem 0.7rem;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .hint.error {
+    color: var(--danger);
   }
 </style>

@@ -39,6 +39,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,8 +47,36 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": {
+        "recommends": [
+          "grim",
+          "slurp",
+          "wl-clipboard",
+          "wf-recorder",
+          "ffmpeg",
+          "libnotify-bin"
+        ],
+        "files": {
+          "/usr/share/metainfo/dev.sharev.app.metainfo.xml": "linux/dev.sharev.app.metainfo.xml"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/metainfo/dev.sharev.app.metainfo.xml": "linux/dev.sharev.app.metainfo.xml"
+        }
+      }
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk1RkZDN0YzQzgxQjVBMjYKUldRbVd4dkk4OGYvbGZEU0FQdFFocG03bnJrWVR6enVjS2FBak9GZEVZZXR4ekdYS3dMYzJRQXgK",
+      "endpoints": [
+        "https://github.com/nihil-vt/ShareV/releases/latest/download/latest.json"
+      ]
     }
   }
 }

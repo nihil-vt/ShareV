@@ -48,6 +48,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState {
             config: Mutex::new(load_config()),
             recorder: Mutex::new(None),
@@ -73,6 +75,7 @@ pub fn run() {
             commands::stop_recording,
             commands::recording_status,
             commands::list_audio_devices,
+            commands::is_flatpak,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -1,14 +1,22 @@
 {
   "name": "sharev",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "ShareX-style screen capture, annotation and sharing tool for Linux",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nihil-vt/ShareV.git"
+  },
+  "homepage": "https://github.com/nihil-vt/ShareV",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc --noEmit"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc --noEmit",
+    "bump": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
@@ -19,5 +27,9 @@
     "svelte-check": "^4.3.2",
     "typescript": "~5.9.3",
     "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.13.3"
   }
 }

@@ -589,6 +589,13 @@ pub fn diagnostics(state: State<'_, AppState>) -> Diagnostics {
     diagnostics_info(&state)
 }
 
+/// True when running inside a Flatpak sandbox, where Flatpak (not the built-in
+/// updater) is responsible for updates.
+#[tauri::command]
+pub fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

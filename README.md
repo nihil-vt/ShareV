@@ -28,6 +28,8 @@ A ShareX-style screen capture and sharing tool for Linux, built with
   upload, remove) plus the saved upload URL
 - **System tray** menu
 - **Global hotkeys** (X11) and a **headless CLI** for compositor bindings
+- **Installable packages** — `.deb`, `.rpm` and AppImage, with signed in-app
+  auto-updates from GitHub Releases
 - **Backend abstraction** — wlroots (`grim` + `slurp`) now, X11
   (`import`) now, XDG portal (`ashpd`) stubbed for later
 
@@ -70,8 +72,60 @@ bun run dev
 Produce a release bundle:
 
 ```bash
-cd src-tauri && cargo build --release
+bun run tauri build
 ```
+
+This writes `.deb`, `.rpm` and `.AppImage` bundles (plus signed updater
+artifacts) under `src-tauri/target/release/bundle/`.
+
+## Install
+
+Prebuilt packages are published on the
+[Releases](https://github.com/nihil-vt/ShareV/releases) page:
+
+- **`.deb`** — Debian / Ubuntu: `sudo apt install ./ShareV_*_amd64.deb`
+- **`.rpm`** — Fedora / openSUSE: `sudo dnf install ./ShareV-*.x86_64.rpm`
+- **`.AppImage`** — any distribution:
+  `chmod +x ShareV_*_amd64.AppImage && ./ShareV_*_amd64.AppImage`
+
+External tools (see [Requirements](#requirements)) are not bundled; the `.deb`
+and `.rpm` declare the most common ones as recommendations, but the AppImage
+needs them installed on the host.
+
+Check for updates from **Settings → Updates**. Updates are downloaded from the
+[Releases](https://github.com/nihil-vt/ShareV/releases) page, verified against a
+signing key, and applied on restart.
+
+## Releasing
+
+The version lives in `package.json`, `src-tauri/Cargo.toml` and
+`src-tauri/tauri.conf.json`. Bump them together:
+
+```bash
+bun run bump 0.2.0
+```
+
+Then commit, tag and push:
+
+```bash
+git commit -am "Release v0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+The `Release` GitHub Actions workflow builds the `.deb`, `.rpm` and AppImage
+bundles, signs the updater artifacts, and opens a **draft** release. Publish the
+draft once the assets look right.
+
+Signing keys are created with `bun run tauri signer generate`. The public key
+lives in `tauri.conf.json`; the private key and its password are stored as
+repository secrets (`TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Cross-version updates only work when the
+app bundle is signed with the matching private key.
+
+Updater artifacts are only produced during releases: the workflow passes
+`--config src-tauri/tauri.updater.conf.json` to enable signed artifacts, so
+local `bun run tauri build` runs without needing a private key.
 
 ## CLI
 

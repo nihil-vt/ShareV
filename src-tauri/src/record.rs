@@ -433,9 +433,7 @@ fn geometry_from_rect(value: &serde_json::Value) -> Option<Geometry> {
 }
 
 async fn hyprland_focused_output() -> Option<Geometry> {
-    if capture::which("hyprctl").is_none() {
-        return None;
-    }
+    capture::which("hyprctl")?;
     let output = Command::new("hyprctl")
         .args(["-j", "monitors"])
         .output()
@@ -454,9 +452,7 @@ async fn hyprland_focused_output() -> Option<Geometry> {
 }
 
 async fn sway_focused_output() -> Option<Geometry> {
-    if capture::which("swaymsg").is_none() {
-        return None;
-    }
+    capture::which("swaymsg")?;
     let output = Command::new("swaymsg")
         .args(["-t", "get_outputs", "--raw"])
         .output()
@@ -478,9 +474,7 @@ async fn sway_focused_output() -> Option<Geometry> {
 /// Fallback used when neither Hyprland nor Sway is available: only succeed when
 /// a single output is enabled, using its current mode.
 async fn wlr_randr_single_output() -> Option<Geometry> {
-    if capture::which("wlr-randr").is_none() {
-        return None;
-    }
+    capture::which("wlr-randr")?;
     let output = Command::new("wlr-randr").arg("--json").output().await.ok()?;
     if !output.status.success() {
         return None;
@@ -525,20 +519,23 @@ async fn x11_screen_geometry() -> Result<Geometry> {
     }
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
-        if let Some(rest) = line.trim().strip_prefix("dimensions:") {
-            if let Some(size) = rest.trim().split_whitespace().next() {
-                if let Some((w, h)) = size.split_once('x') {
-                    let geometry = Geometry {
-                        x: 0,
-                        y: 0,
-                        width: w.trim().parse().unwrap_or(0),
-                        height: h.trim().parse().unwrap_or(0),
-                    };
-                    if geometry.width > 0 && geometry.height > 0 {
-                        return Ok(geometry);
-                    }
-                }
-            }
+        let Some(rest) = line.trim().strip_prefix("dimensions:") else {
+            continue;
+        };
+        let Some(size) = rest.split_whitespace().next() else {
+            continue;
+        };
+        let Some((w, h)) = size.split_once('x') else {
+            continue;
+        };
+        let geometry = Geometry {
+            x: 0,
+            y: 0,
+            width: w.trim().parse().unwrap_or(0),
+            height: h.trim().parse().unwrap_or(0),
+        };
+        if geometry.width > 0 && geometry.height > 0 {
+            return Ok(geometry);
         }
     }
     Err(Error::msg("could not determine the screen size"))

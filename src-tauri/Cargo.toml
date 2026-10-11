@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "ShareX-style screenshot capture and sharing for Linux"
 authors = ["ShareV contributors"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/nihil-vt/ShareV"
+homepage = "https://github.com/nihil-vt/ShareV"
 edition = "2024"
 rust-version = "1.90"
 
@@ -46,6 +47,8 @@ tauri-plugin-clipboard-manager = "2.4.2"
 tauri-plugin-shell = "2.5.0"
 tauri-plugin-notification = "2.6.0"
 tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Optional, reserved for the XDG Desktop Portal backend (not wired up yet)
 ashpd = "0.13.13"

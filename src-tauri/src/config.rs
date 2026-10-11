@@ -54,9 +54,10 @@ impl Default for Hotkeys {
 }
 
 /// Which destination uploaded images are sent to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UploaderKind {
+    #[default]
     None,
     Imgur,
     Http,
@@ -74,16 +75,11 @@ impl UploaderKind {
     }
 }
 
-impl Default for UploaderKind {
-    fn default() -> Self {
-        UploaderKind::None
-    }
-}
-
 /// How the returned link is formatted before being copied to the clipboard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CopyFormat {
+    #[default]
     Url,
     Markdown,
     Html,
@@ -96,12 +92,6 @@ impl CopyFormat {
             CopyFormat::Markdown => format!("![](<{url}>)"),
             CopyFormat::Html => format!("<img src=\"{url}\" />"),
         }
-    }
-}
-
-impl Default for CopyFormat {
-    fn default() -> Self {
-        CopyFormat::Url
     }
 }
 
@@ -143,9 +133,10 @@ impl Default for UploadConfig {
 }
 
 /// Container / codec for screen recordings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordFormat {
+    #[default]
     Mp4,
     Webm,
     Gif,
@@ -169,16 +160,13 @@ impl RecordFormat {
     }
 }
 
-impl Default for RecordFormat {
-    fn default() -> Self {
-        RecordFormat::Mp4
-    }
-}
+
 
 /// Which audio sources a recording captures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AudioMode {
+    #[default]
     None,
     System,
     Microphone,
@@ -204,11 +192,7 @@ impl AudioMode {
     }
 }
 
-impl Default for AudioMode {
-    fn default() -> Self {
-        AudioMode::None
-    }
-}
+
 
 /// Screen recording configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,15 +306,12 @@ impl Config {
         let raw = self.save_directory.trim();
         let dir = if raw.is_empty() {
             paths::default_save_dir()
+        } else if let Some(rest) = raw.strip_prefix("~/") {
+            dirs::home_dir()
+                .map(|h| h.join(rest))
+                .unwrap_or_else(|| std::path::PathBuf::from(raw))
         } else {
-            let expanded = if let Some(rest) = raw.strip_prefix("~/") {
-                dirs::home_dir()
-                    .map(|h| h.join(rest))
-                    .unwrap_or_else(|| std::path::PathBuf::from(raw))
-            } else {
-                std::path::PathBuf::from(raw)
-            };
-            expanded
+            std::path::PathBuf::from(raw)
         };
         let _ = std::fs::create_dir_all(&dir);
         dir
