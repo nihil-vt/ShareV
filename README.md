@@ -3,17 +3,23 @@
 A ShareX-style screen capture and sharing tool for Linux, built with
 [Tauri 2](https://tauri.app) + [Svelte 5](https://svelte.dev).
 
-> Status: **milestone 4 — screen recording**. Capture a region, the
-> fullscreen, or the focused window; annotate the result with shapes, arrows,
-> a pen, text, pixelation and cropping; then save it, copy it to the clipboard,
-> upload it to a destination, and find it again in a searchable history. Record
-> the screen to MP4, WebM or GIF with optional system and microphone audio. A
-> system tray and best-effort global hotkeys are included. OCR and the rest of
-> ShareX's toolset come next.
+> Status: **milestone 6 — capture workflow**. Capture a region, the
+> fullscreen, a specific monitor, or a specific window; pick a delay before the
+> shot; run a chain of tasks after each capture (save, copy, upload, pin to
+> screen, open the editor, run a command, notify); and record the screen to MP4,
+> WebM or GIF. Global hotkeys work on Wayland through the XDG portal. OCR and the
+> rest of ShareX's toolset come next.
 
 ## Features (current)
 
-- **Region / Fullscreen / Window capture**
+- **Region / Fullscreen / Window capture**, with a **delay timer** and a
+  **monitor picker**
+- **Window picker** to capture one specific window (Hyprland, Sway, X11)
+- **Task chains** — ordered post-capture and post-upload tasks (save, history,
+  copy, editor, open, upload, pin, command, notify / copy link, notify, open),
+  editable in Settings with automatic migration from the legacy flags
+- **Pin-to-screen** — keep a capture floating in a borderless, always-on-top,
+  transparent window
 - **Annotation editor** — rectangle, ellipse, arrow, pen, text, pixelate and
   crop tools with colour/width controls and undo/redo
 - **Screen recording** — MP4/H.264, WebM/VP9 or animated GIF, with configurable
@@ -26,8 +32,11 @@ A ShareX-style screen capture and sharing tool for Linux, built with
   Markdown or HTML
 - **History** with thumbnails, search and per-item actions (open, copy, edit,
   upload, remove) plus the saved upload URL
-- **System tray** menu
-- **Global hotkeys** (X11) and a **headless CLI** for compositor bindings
+- **System tray** menu with capture, recording toggle, pin-last and upload-last
+- **Global hotkeys** on Wayland (XDG portal) and X11
+  (`tauri-plugin-global-shortcut`), with a binding editor in Settings
+- **Headless CLI** for compositor bindings, with `--delay`, `--monitor` and
+  `--window` targeting
 - **Installable packages** — `.deb`, `.rpm` and AppImage, with signed in-app
   auto-updates from GitHub Releases
 - **Backend abstraction** — wlroots (`grim` + `slurp`) now, X11
@@ -45,7 +54,8 @@ Runtime tools (at least one capture backend must be present):
 
 Clipboard: `wl-clipboard` (`wl-copy`) on Wayland or `xclip` on X11.
 
-Window capture on wlroots needs `hyprctl` (Hyprland) or `swaymsg` (Sway).
+Window and monitor enumeration needs `hyprctl` (Hyprland), `swaymsg` (Sway), or
+`wmctrl` + `xrandr` (X11).
 
 Recording needs `wf-recorder` on Wayland/wlroots or `ffmpeg` on X11
 (`x11grab` + `pulse`); GIF output always transcodes through `ffmpeg`. Fullscreen
@@ -129,22 +139,28 @@ local `bun run tauri build` runs without needing a private key.
 
 ## CLI
 
-ShareV doubles as a small CLI — the recommended way to bind hotkeys on
-Wayland, where compositors grab keys themselves:
+ShareV doubles as a small CLI — useful for compositor bindings, or as a
+fallback when hotkeys are unavailable:
 
 ```bash
 sharev capture region        # select a region, prints the saved path
 sharev capture fullscreen
 sharev capture window
+sharev capture fullscreen --monitor HDMI-1 --delay 3
+sharev capture window --window 0x123
 sharev upload shot.png       # upload a file, prints the URL (and copies the link)
 sharev record region         # record until Ctrl-C, then print the path
 sharev record fullscreen
 sharev record window
+sharev pin shot.png          # keep a capture floating on screen
 sharev diagnostics           # environment + backend report
 sharev --help
 ```
 
-Example Hyprland config (`~/.config/hypr/hyprland.conf`):
+Global hotkeys are built in — on Wayland they register through the XDG portal,
+on X11 through `tauri-plugin-global-shortcut`. If neither works (e.g. the portal
+is unavailable on X11), bind the CLI in your compositor instead. Example
+Hyprland config (`~/.config/hypr/hyprland.conf`):
 
 ```conf
 bind = , PRINT,      exec, sharev capture region
@@ -202,7 +218,7 @@ Ctrl-C to stop.
 
 ```
 src/                       Svelte 5 frontend (runes)
-  lib/components/          Sidebar, Capture/Record/History/Editor/Settings/Diagnostics views
+  lib/components/          Sidebar, Capture/Record/History/Editor/Settings/Diagnostics/Pin views
   lib/api.ts               typed command wrappers
   lib/state.svelte.ts      reactive app state
 src-tauri/src/
@@ -211,9 +227,13 @@ src-tauri/src/
   config.rs               TOML config model
   history.rs              capture history store
   pipeline.rs             capture -> encode -> save -> clipboard -> history
+  tasks.rs                post-capture / post-upload task execution
   record.rs               wf-recorder / ffmpeg screen recording
   upload.rs               Imgur / HTTP / command uploaders
   commands.rs             Tauri commands
   tray.rs / shortcuts.rs  tray icon + global hotkeys
+  portal_shortcuts.rs     XDG portal GlobalShortcuts (ashpd)
+  pin.rs                  pin-to-screen window registry
+  wm.rs                   window / monitor enumeration
   cli.rs                  headless command line
 ```
