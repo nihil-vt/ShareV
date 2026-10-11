@@ -32,8 +32,15 @@ impl CaptureBackend for X11Backend {
 
     async fn capture(&self, request: CaptureRequest) -> Result<CapturedImage> {
         let mut cmd = Command::new("import");
+        let mut geometry = None;
         match request {
-            CaptureRequest::Fullscreen => {
+            CaptureRequest::Fullscreen { monitor } => {
+                if let Some(name) = monitor.filter(|n| !n.trim().is_empty()) {
+                    let g = crate::wm::monitor_geometry(&name).await?;
+                    cmd.arg("-crop")
+                        .arg(format!("{}x{}+{}+{}", g.width, g.height, g.x, g.y));
+                    geometry = Some(g);
+                }
                 cmd.args(["-window", "root"]);
             }
             // With no geometry, `import` opens its own interactive selector.
@@ -42,9 +49,13 @@ impl CaptureBackend for X11Backend {
                 cmd.arg("-crop")
                     .arg(format!("{}x{}+{}+{}", g.width, g.height, g.x, g.y));
                 cmd.args(["-window", "root"]);
+                geometry = Some(g);
             }
-            CaptureRequest::Window { .. } => {
-                let id = active_window_id().await?;
+            CaptureRequest::Window { id } => {
+                let id = match id.filter(|i| !i.trim().is_empty()) {
+                    Some(id) => id,
+                    None => active_window_id().await?,
+                };
                 cmd.args(["-window", &id]);
             }
         }
@@ -67,6 +78,7 @@ impl CaptureBackend for X11Backend {
         Ok(CapturedImage {
             image: decode_png(&output.stdout)?,
             backend: self.id().to_string(),
+            geometry,
         })
     }
 }

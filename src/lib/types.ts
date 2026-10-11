@@ -4,12 +4,50 @@ export type UploaderKind = 'none' | 'imgur' | 'http' | 'command';
 export type CopyFormat = 'url' | 'markdown' | 'html';
 export type RecordFormat = 'mp4' | 'webm' | 'gif';
 export type AudioMode = 'none' | 'system' | 'microphone' | 'both';
+export type HotkeyBackend = 'auto' | 'portal' | 'global-shortcut' | 'none';
+
+/** A single post-capture / post-upload action id. */
+export type CaptureTask =
+  | 'save'
+  | 'history'
+  | 'copy'
+  | 'editor'
+  | 'open'
+  | 'upload'
+  | 'pin'
+  | 'command'
+  | 'notify'
+  | 'copyLink';
+
+export interface Geometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface HotkeyBinding {
+  action: string;
+  accelerator: string;
+}
 
 export interface Hotkeys {
   enabled: boolean;
+  backend: HotkeyBackend;
+  /** Ordered action bindings; empty means "derive from the legacy keys". */
+  bindings: HotkeyBinding[];
   region: string;
   fullscreen: string;
   window: string;
+}
+
+export interface AfterCaptureConfig {
+  tasks?: CaptureTask[] | null;
+  command: string;
+}
+
+export interface AfterUploadConfig {
+  tasks?: CaptureTask[] | null;
 }
 
 export interface UploadConfig {
@@ -37,6 +75,8 @@ export interface Config {
   imageFormat: ImageFormat;
   jpegQuality: number;
   filenameTemplate: string;
+  captureDelaySeconds: number;
+  monitor: string;
   copyToClipboard: boolean;
   openEditorAfterCapture: boolean;
   showNotification: boolean;
@@ -45,6 +85,8 @@ export interface Config {
   hotkeys: Hotkeys;
   upload: UploadConfig;
   record: RecordConfig;
+  afterCapture: AfterCaptureConfig;
+  afterUpload: AfterUploadConfig;
 }
 
 export interface HistoryEntry {
@@ -62,6 +104,36 @@ export interface HistoryEntry {
 
 export interface CaptureResult extends HistoryEntry {
   copied: boolean;
+  /** URL returned by the `upload` task, when it ran. */
+  url?: string | null;
+  /** Whether the annotation editor should open for this capture. */
+  openEditor: boolean;
+}
+
+export interface WindowInfo {
+  /** Backend-specific window id (Hyprland address, Sway node id, X11 window id). */
+  id: string;
+  title: string;
+  app: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface MonitorInfo {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  focused: boolean;
+}
+
+export interface PinInfo {
+  path: string;
+  width: number;
+  height: number;
 }
 
 export interface RecordingInfo {
@@ -118,4 +190,8 @@ export interface Diagnostics {
   saveDirectory: string;
   configPath: string;
   historyPath: string;
+  /** Active hotkey mechanism: "portal", "global-shortcut" or "none". */
+  hotkeyBackend: string;
+  /** Whether the XDG portal GlobalShortcuts interface is reachable. */
+  portalShortcuts: boolean;
 }

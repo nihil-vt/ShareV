@@ -7,12 +7,16 @@ pub mod error;
 pub mod history;
 pub mod id;
 pub mod paths;
+pub mod pin;
 pub mod pipeline;
 pub mod platform;
+pub mod portal_shortcuts;
 pub mod record;
 pub mod shortcuts;
+pub mod tasks;
 pub mod tray;
 pub mod upload;
+pub mod wm;
 
 use std::sync::Mutex;
 
@@ -58,6 +62,11 @@ pub fn run() {
             commands::get_config,
             commands::save_config,
             commands::capture,
+            commands::list_windows,
+            commands::list_monitors,
+            commands::pin_capture,
+            commands::pin_info,
+            commands::pin_last,
             commands::diagnostics,
             commands::list_history,
             commands::delete_history,
@@ -71,6 +80,7 @@ pub fn run() {
             commands::apply_edits,
             commands::copy_edits,
             commands::upload_path,
+            commands::upload_last,
             commands::start_recording,
             commands::stop_recording,
             commands::recording_status,

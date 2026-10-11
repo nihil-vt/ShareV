@@ -102,9 +102,17 @@ pub fn choose_backend() -> Result<&'static str> {
 }
 
 /// Resolve the screen region for a recording request.
-pub async fn resolve_geometry(kind: CaptureKind, backend: &str) -> Result<Option<Geometry>> {
+pub async fn resolve_geometry(
+    kind: CaptureKind,
+    backend: &str,
+    monitor: &str,
+    window_id: Option<&str>,
+) -> Result<Option<Geometry>> {
     match kind {
         CaptureKind::Fullscreen => {
+            if !monitor.trim().is_empty() {
+                return Ok(Some(crate::wm::monitor_geometry(monitor).await?));
+            }
             if backend == BACKEND_WF_RECORDER {
                 Ok(Some(wayland_fullscreen_geometry().await?))
             } else {
@@ -119,6 +127,9 @@ pub async fn resolve_geometry(kind: CaptureKind, backend: &str) -> Result<Option
             }
         }
         CaptureKind::Window => {
+            if let Some(id) = window_id.filter(|id| !id.trim().is_empty()) {
+                return Ok(Some(crate::wm::window_geometry(id).await?));
+            }
             if backend == BACKEND_WF_RECORDER {
                 Ok(Some(
                     crate::capture::wlroots::active_window_geometry().await?,

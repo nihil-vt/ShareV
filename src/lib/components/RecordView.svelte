@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { api, fileSrc, formatBytes, formatDate } from '../api';
   import { app, startRecording, stopRecording, toast, uploadFile } from '../state.svelte';
-  import type { CaptureKind } from '../types';
+  import type { CaptureKind, MonitorInfo } from '../types';
 
   const actions = [
     { kind: 'region' as const, label: 'Region', hint: 'Select an area', icon: '▣' },
@@ -9,7 +10,20 @@
     { kind: 'window' as const, label: 'Window', hint: 'Focused window', icon: '❐' },
   ];
 
+  const delays = [0, 1, 3, 5, 10];
+
   let elapsed = $state('00:00');
+  let monitors = $state<MonitorInfo[]>([]);
+  let delay = $state<number>(app.config?.captureDelaySeconds ?? 0);
+  let monitor = $state<string>(app.config?.monitor ?? '');
+
+  onMount(async () => {
+    try {
+      monitors = await api.listMonitors();
+    } catch {
+      monitors = [];
+    }
+  });
 
   $effect(() => {
     const started = app.recordingStartedAt;
@@ -80,9 +94,35 @@
       </div>
     </div>
   {:else}
+    <div class="capture-bar">
+      <label class="opt">
+        <span>Delay</span>
+        <select bind:value={delay}>
+          {#each delays as d (d)}
+            <option value={d}>{d === 0 ? 'None' : `${d}s`}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="opt grow">
+        <span>Monitor</span>
+        <select bind:value={monitor}>
+          <option value="">Focused / default</option>
+          {#each monitors as m (m.name)}
+            <option value={m.name}>{m.focused ? '● ' : ''}{m.name} · {m.width}×{m.height}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
     <div class="capture-grid">
       {#each actions as action (action.kind)}
-        <button class="capture-card" onclick={() => startRecording(action.kind)}>
+        <button
+          class="capture-card"
+          onclick={() =>
+            startRecording(action.kind, {
+              delaySeconds: delay,
+              monitor: monitor || undefined,
+            })}
+        >
           <span class="card-icon">{action.icon}</span>
           <span class="card-label">{action.label}</span>
           <span class="card-hint">{action.hint}</span>
@@ -147,6 +187,26 @@
 </section>
 
 <style>
+  .capture-bar {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1.1rem;
+    padding: 0.8rem 1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .opt {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  .opt.grow {
+    flex: 1;
+  }
   .capture-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

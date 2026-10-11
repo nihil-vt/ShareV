@@ -30,15 +30,127 @@ impl ImageFormat {
     }
 }
 
+/// A single post-capture / post-upload action. Stored in the config as a
+/// lowercase id and parsed leniently so that unknown ids never break loading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Task {
+    Save,
+    History,
+    /// Copy the image itself to the clipboard.
+    CopyImage,
+    Editor,
+    Open,
+    Upload,
+    Pin,
+    Command,
+    Notify,
+    /// Copy the freshly obtained link to the clipboard (post-upload).
+    CopyLink,
+}
+
+impl Task {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Task::Save => "save",
+            Task::History => "history",
+            Task::CopyImage => "copy",
+            Task::Editor => "editor",
+            Task::Open => "open",
+            Task::Upload => "upload",
+            Task::Pin => "pin",
+            Task::Command => "command",
+            Task::Notify => "notify",
+            Task::CopyLink => "copyLink",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        let normalized = value.trim().to_ascii_lowercase().replace(['-', '_'], "");
+        match normalized.as_str() {
+            "save" => Some(Task::Save),
+            "history" => Some(Task::History),
+            "copy" | "copyimage" => Some(Task::CopyImage),
+            "editor" | "edit" => Some(Task::Editor),
+            "open" => Some(Task::Open),
+            "upload" | "share" => Some(Task::Upload),
+            "pin" => Some(Task::Pin),
+            "command" | "action" => Some(Task::Command),
+            "notify" | "notification" => Some(Task::Notify),
+            "copylink" => Some(Task::CopyLink),
+            _ => None,
+        }
+    }
+}
+
+/// Ordered tasks run after a capture. When `tasks` is absent the list is derived
+/// from the legacy boolean flags (see [`Config::after_capture_tasks`]).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AfterCaptureConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<String>>,
+    /// Shell command run by the `command` task (the file path is substituted for
+    /// `{file}` or appended; also available as `$SHAREV_FILE`).
+    pub command: String,
+}
+
+/// Ordered tasks run after a successful upload.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AfterUploadConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<String>>,
+}
+
+/// Which global-hotkey mechanism to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HotkeyBackend {
+    /// Portal on Wayland, `tauri-plugin-global-shortcut` elsewhere.
+    #[default]
+    Auto,
+    /// Force the XDG portal `GlobalShortcuts` interface.
+    Portal,
+    /// Force `tauri-plugin-global-shortcut` (X11).
+    GlobalShortcut,
+    /// Do not register any hotkeys from inside the app.
+    None,
+}
+
+impl HotkeyBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HotkeyBackend::Auto => "auto",
+            HotkeyBackend::Portal => "portal",
+            HotkeyBackend::GlobalShortcut => "global-shortcut",
+            HotkeyBackend::None => "none",
+        }
+    }
+}
+
+/// A single action → accelerator binding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyBinding {
+    /// Action id, e.g. `capture-region`, `record-toggle`, `open-editor`.
+    pub action: String,
+    /// Accelerator, e.g. `Print`, `Ctrl+PrintScreen`.
+    pub accelerator: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Hotkeys {
     pub enabled: bool,
-    /// Shortcut for interactive region capture, e.g. "PrintScreen".
+    /// Which mechanism to use: "auto", "portal", "global-shortcut" or "none".
+    pub backend: HotkeyBackend,
+    /// Ordered action bindings. Empty means "derive from the legacy keys".
+    pub bindings: Vec<HotkeyBinding>,
+    /// Legacy shortcut for interactive region capture, e.g. "PrintScreen".
     pub region: String,
-    /// Shortcut for fullscreen capture. Empty disables it.
+    /// Legacy shortcut for fullscreen capture. Empty disables it.
     pub fullscreen: String,
-    /// Shortcut for active-window capture. Empty disables it.
+    /// Legacy shortcut for active-window capture. Empty disables it.
     pub window: String,
 }
 
@@ -46,11 +158,52 @@ impl Default for Hotkeys {
     fn default() -> Self {
         Self {
             enabled: true,
+            backend: HotkeyBackend::Auto,
+            bindings: Vec::new(),
             region: "PrintScreen".into(),
             fullscreen: "Ctrl+PrintScreen".into(),
             window: "Alt+PrintScreen".into(),
         }
     }
+}
+
+impl Hotkeys {
+    /// The effective bindings, deriving them from the legacy keys when the
+    /// binding list is empty.
+    pub fn effective_bindings(&self) -> Vec<HotkeyBinding> {
+        if !self.bindings.is_empty() {
+            return self.bindings.clone();
+        }
+        let legacy = [
+            ("capture-region", &self.region),
+            ("capture-fullscreen", &self.fullscreen),
+            ("capture-window", &self.window),
+        ];
+        legacy
+            .into_iter()
+            .filter(|(_, accel)| !accel.trim().is_empty())
+            .map(|(action, accelerator)| HotkeyBinding {
+                action: action.to_string(),
+                accelerator: accelerator.clone(),
+            })
+            .collect()
+    }
+}
+
+/// Default post-capture tasks, matching the legacy default booleans.
+pub fn default_capture_tasks() -> Vec<String> {
+    ["save", "history", "copy", "editor", "notify"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Default post-upload tasks.
+pub fn default_upload_tasks() -> Vec<String> {
+    ["copyLink", "notify"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Which destination uploaded images are sent to.
@@ -237,11 +390,16 @@ pub struct Config {
     pub jpeg_quality: u8,
     /// `chrono` strftime template for filenames (without extension).
     pub filename_template: String,
-    /// Copy each capture to the clipboard after saving.
+    /// Seconds to wait before capturing / recording (0 = no delay).
+    pub capture_delay_seconds: u32,
+    /// Target monitor name for fullscreen capture/recording ("" = focused).
+    pub monitor: String,
+    /// Legacy: copy each capture to the clipboard after saving. Kept for
+    /// migration only; the `copy` task supersedes it.
     pub copy_to_clipboard: bool,
-    /// Open the annotation editor after an in-app capture.
+    /// Legacy: open the annotation editor after an in-app capture.
     pub open_editor_after_capture: bool,
-    /// Show a desktop notification after each capture.
+    /// Legacy: show a desktop notification after each capture.
     pub show_notification: bool,
     /// Maximum number of history entries to keep.
     pub max_history: usize,
@@ -253,6 +411,13 @@ pub struct Config {
     pub upload: UploadConfig,
     /// Screen recording.
     pub record: RecordConfig,
+    /// Ordered tasks run after a capture. Field-level `default` keeps a missing
+    /// section as `None` so legacy boolean flags can drive migration.
+    #[serde(default)]
+    pub after_capture: AfterCaptureConfig,
+    /// Ordered tasks run after a successful upload.
+    #[serde(default)]
+    pub after_upload: AfterUploadConfig,
 }
 
 impl Default for Config {
@@ -262,6 +427,8 @@ impl Default for Config {
             image_format: ImageFormat::Png,
             jpeg_quality: 92,
             filename_template: "%Y-%m-%d_%H-%M-%S".into(),
+            capture_delay_seconds: 0,
+            monitor: String::new(),
             copy_to_clipboard: true,
             open_editor_after_capture: true,
             show_notification: true,
@@ -270,6 +437,13 @@ impl Default for Config {
             hotkeys: Hotkeys::default(),
             upload: UploadConfig::default(),
             record: RecordConfig::default(),
+            after_capture: AfterCaptureConfig {
+                tasks: Some(default_capture_tasks()),
+                command: String::new(),
+            },
+            after_upload: AfterUploadConfig {
+                tasks: Some(default_upload_tasks()),
+            },
         }
     }
 }
@@ -285,12 +459,67 @@ impl Config {
             return Ok(cfg);
         }
         let text = std::fs::read_to_string(&path)?;
-        let cfg: Config = toml::from_str(&text)?;
+        let mut cfg: Config = toml::from_str(&text)?;
+        cfg.normalize();
         Ok(cfg)
     }
 
     pub fn load_or_default() -> Self {
         Self::load().unwrap_or_default()
+    }
+
+    /// Fill in any derived values (task chains, hotkey bindings) that were
+    /// absent from an older config file.
+    pub fn normalize(&mut self) {
+        if self.after_capture.tasks.is_none() {
+            self.after_capture.tasks = Some(self.derive_capture_tasks());
+        }
+        if self.after_upload.tasks.is_none() {
+            self.after_upload.tasks = Some(default_upload_tasks());
+        }
+        if self.hotkeys.bindings.is_empty() {
+            self.hotkeys.bindings = self.hotkeys.effective_bindings();
+        }
+    }
+
+    /// Derive a post-capture task list from the legacy boolean flags.
+    fn derive_capture_tasks(&self) -> Vec<String> {
+        let mut tasks = vec!["save".to_string(), "history".to_string()];
+        if self.copy_to_clipboard {
+            tasks.push("copy".into());
+        }
+        if self.open_editor_after_capture {
+            tasks.push("editor".into());
+        }
+        if self.show_notification {
+            tasks.push("notify".into());
+        }
+        tasks
+    }
+
+    /// The ordered post-capture tasks, migrating legacy configs on the fly.
+    pub fn after_capture_tasks(&self) -> Vec<Task> {
+        let raw = self
+            .after_capture
+            .tasks
+            .clone()
+            .unwrap_or_else(|| self.derive_capture_tasks());
+        raw.iter().filter_map(|id| Task::parse(id)).collect()
+    }
+
+    /// The ordered post-upload tasks.
+    pub fn after_upload_tasks(&self) -> Vec<Task> {
+        let raw = self
+            .after_upload
+            .tasks
+            .clone()
+            .unwrap_or_else(default_upload_tasks);
+        raw.iter().filter_map(|id| Task::parse(id)).collect()
+    }
+
+    /// Whether a capture task is enabled.
+    pub fn has_capture_task(&self, task: Task) -> bool {
+        self.after_capture_tasks().contains(&task)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -409,5 +638,72 @@ mod tests {
             CopyFormat::Html.format(url),
             "<img src=\"https://example.com/a.png\" />"
         );
+    }
+
+    #[test]
+    fn parses_task_ids_leniently() {
+        assert_eq!(Task::parse("save"), Some(Task::Save));
+        assert_eq!(Task::parse("  Notify "), Some(Task::Notify));
+        assert_eq!(Task::parse("copy-image"), Some(Task::CopyImage));
+        assert_eq!(Task::parse("copyLink"), Some(Task::CopyLink));
+        assert_eq!(Task::parse("nonsense"), None);
+    }
+
+    #[test]
+    fn migrates_legacy_booleans_into_tasks() {
+        // Simulate an old config: the task list is absent.
+        let text = r#"
+            copyToClipboard = true
+            openEditorAfterCapture = false
+            showNotification = false
+        "#;
+        let mut cfg: Config = toml::from_str(text).unwrap();
+        assert!(cfg.after_capture.tasks.is_none());
+        cfg.normalize();
+
+        let tasks = cfg.after_capture_tasks();
+        assert_eq!(
+            tasks,
+            vec![Task::Save, Task::History, Task::CopyImage]
+        );
+    }
+
+    #[test]
+    fn explicit_task_list_wins_over_legacy_booleans() {
+        let text = r#"
+            copyToClipboard = false
+            [afterCapture]
+            tasks = ["save", "pin", "editor"]
+        "#;
+        let mut cfg: Config = toml::from_str(text).unwrap();
+        cfg.normalize();
+        assert_eq!(
+            cfg.after_capture_tasks(),
+            vec![Task::Save, Task::Pin, Task::Editor]
+        );
+    }
+
+    #[test]
+    fn derives_hotkey_bindings_from_legacy_keys() {
+        let text = r#"
+            [hotkeys]
+            region = "Print"
+            fullscreen = ""
+            window = "Alt+Print"
+        "#;
+        let mut cfg: Config = toml::from_str(text).unwrap();
+        cfg.normalize();
+        let bindings = cfg.hotkeys.effective_bindings();
+        let actions: Vec<_> = bindings.iter().map(|b| b.action.as_str()).collect();
+        assert_eq!(actions, vec!["capture-region", "capture-window"]);
+    }
+
+    #[test]
+    fn config_round_trips_through_toml() {
+        let cfg = Config::default();
+        let text = toml::to_string_pretty(&cfg).unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.after_capture_tasks(), cfg.after_capture_tasks());
+        assert_eq!(parsed.after_upload_tasks(), cfg.after_upload_tasks());
     }
 }

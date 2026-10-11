@@ -181,7 +181,7 @@ fn parse_headers(raw: &str) -> Vec<(String, String)> {
 }
 
 /// Quote a string for safe interpolation into a POSIX `sh -c` command.
-fn shell_quote(value: &str) -> String {
+pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 

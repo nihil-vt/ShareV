@@ -49,6 +49,8 @@
           <div><dt>Wayland</dt><dd>{diag.wayland ? 'yes' : 'no'}</dd></div>
           <div><dt>X11</dt><dd>{diag.x11 ? 'yes' : 'no'}</dd></div>
           <div><dt>Active backend</dt><dd>{diag.activeBackend ?? 'none'}</dd></div>
+          <div><dt>Hotkey backend</dt><dd>{diag.hotkeyBackend}</dd></div>
+          <div><dt>Portal shortcuts</dt><dd>{diag.portalShortcuts ? 'available' : 'unavailable'}</dd></div>
         </dl>
       </div>
 

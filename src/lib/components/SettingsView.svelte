@@ -3,7 +3,8 @@
   import { api } from '../api';
   import { app, loadAudioDevices, saveConfig, toast } from '../state.svelte';
   import { checkForUpdates, initUpdates, installUpdate, updateProgress, updates } from '../updates.svelte';
-  import type { Config } from '../types';
+  import TaskChainEditor from './TaskChainEditor.svelte';
+  import type { CaptureTask, Config } from '../types';
 
   const initial = structuredClone($state.snapshot(app.config)) as Config;
   let draft = $state<Config>(initial);
@@ -15,6 +16,34 @@
 
   const systemDevices = $derived(app.audioDevices.filter((d) => d.monitor));
   const microphoneDevices = $derived(app.audioDevices.filter((d) => !d.monitor));
+
+  const captureTasks: CaptureTask[] = [
+    'save',
+    'history',
+    'copy',
+    'editor',
+    'open',
+    'upload',
+    'pin',
+    'command',
+    'notify',
+  ];
+  const uploadTasks: CaptureTask[] = ['copyLink', 'notify', 'open'];
+
+  const hotkeyActions = [
+    { value: 'capture-region', label: 'Capture region' },
+    { value: 'capture-fullscreen', label: 'Capture fullscreen' },
+    { value: 'capture-window', label: 'Capture window' },
+    { value: 'record-toggle', label: 'Toggle recording' },
+    { value: 'open-editor', label: 'Open editor' },
+  ];
+
+  const hotkeyBackends = [
+    { value: 'auto', label: 'Automatic (portal on Wayland)' },
+    { value: 'portal', label: 'XDG Portal (Wayland)' },
+    { value: 'global-shortcut', label: 'Global Shortcut (X11)' },
+    { value: 'none', label: 'None' },
+  ];
 
   async function browse() {
     try {
@@ -31,6 +60,28 @@
 
   function reset() {
     draft = structuredClone($state.snapshot(app.config)) as Config;
+  }
+
+  function setAfterCapture(tasks: CaptureTask[]) {
+    draft.afterCapture = { ...draft.afterCapture, tasks };
+  }
+
+  function setAfterUpload(tasks: CaptureTask[]) {
+    draft.afterUpload = { ...draft.afterUpload, tasks };
+  }
+
+  function addBinding() {
+    draft.hotkeys = {
+      ...draft.hotkeys,
+      bindings: [...draft.hotkeys.bindings, { action: 'capture-region', accelerator: '' }],
+    };
+  }
+
+  function removeBinding(index: number) {
+    draft.hotkeys = {
+      ...draft.hotkeys,
+      bindings: draft.hotkeys.bindings.filter((_, i) => i !== index),
+    };
   }
 </script>
 
@@ -70,24 +121,15 @@
         <span>Filename template (strftime)</span>
         <input type="text" bind:value={draft.filenameTemplate} placeholder="%Y-%m-%d_%H-%M-%S" />
       </label>
-    </div>
 
-    <div class="card">
-      <h2>Behaviour</h2>
-
-      <label class="check">
-        <input type="checkbox" bind:checked={draft.copyToClipboard} />
-        <span>Copy capture to clipboard</span>
+      <label class="field">
+        <span>Capture delay (seconds)</span>
+        <input type="number" min="0" max="60" bind:value={draft.captureDelaySeconds} />
       </label>
 
-      <label class="check">
-        <input type="checkbox" bind:checked={draft.openEditorAfterCapture} />
-        <span>Open the annotation editor after each capture</span>
-      </label>
-
-      <label class="check">
-        <input type="checkbox" bind:checked={draft.showNotification} />
-        <span>Show a notification after each capture</span>
+      <label class="field">
+        <span>Target monitor (blank = focused)</span>
+        <input type="text" bind:value={draft.monitor} placeholder="e.g. HDMI-1" />
       </label>
 
       <label class="field">
@@ -104,6 +146,41 @@
           <option value="portal">XDG Portal (not implemented)</option>
         </select>
       </label>
+    </div>
+
+    <div class="card">
+      <h2>After capture</h2>
+      <p class="hint">Run these steps in order once an image is grabbed.</p>
+
+      <TaskChainEditor
+        tasks={draft.afterCapture.tasks ?? []}
+        available={captureTasks}
+        onChange={setAfterCapture}
+      />
+
+      <label class="field">
+        <span>Command (for the "Run command" task)</span>
+        <input
+          type="text"
+          bind:value={draft.afterCapture.command}
+          placeholder={'my-tool --file {file}'}
+        />
+      </label>
+      <p class="hint">
+        The file path replaces <code>{'{file}'}</code> (or is appended) and is available as
+        <code>$SHAREV_FILE</code>.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>After upload</h2>
+      <p class="hint">Run these steps once an upload succeeds.</p>
+
+      <TaskChainEditor
+        tasks={draft.afterUpload.tasks ?? []}
+        available={uploadTasks}
+        onChange={setAfterUpload}
+      />
     </div>
 
     <div class="card">
@@ -259,6 +336,48 @@
     </div>
 
     <div class="card">
+      <h2>Hotkeys</h2>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.hotkeys.enabled} />
+        <span>Register global hotkeys</span>
+      </label>
+
+      <label class="field">
+        <span>Backend</span>
+        <select bind:value={draft.hotkeys.backend}>
+          {#each hotkeyBackends as b (b.value)}
+            <option value={b.value}>{b.label}</option>
+          {/each}
+        </select>
+      </label>
+
+      <div class="bindings">
+        {#each draft.hotkeys.bindings as binding, i (i)}
+          <div class="binding">
+            <select bind:value={binding.action}>
+              {#each hotkeyActions as a (a.value)}
+                <option value={a.value}>{a.label}</option>
+              {/each}
+            </select>
+            <input
+              type="text"
+              bind:value={binding.accelerator}
+              placeholder="Ctrl+PrintScreen"
+            />
+            <button class="ghost" onclick={() => removeBinding(i)}>Remove</button>
+          </div>
+        {/each}
+        <button class="ghost" onclick={addBinding}>Add binding</button>
+      </div>
+
+      <p class="hint">
+        On Wayland the compositor usually grabs keys; the portal backend registers them for you.
+        Alternatively bind the CLI, e.g. in Hyprland:<br />
+        <code>bind = , PRINT, exec, sharev capture region</code>
+      </p>
+    </div>
+
+    <div class="card">
       <h2>Updates</h2>
       <p class="hint">ShareV {updates.current || '…'}</p>
 
@@ -297,32 +416,6 @@
           {/if}
         </div>
       {/if}
-    </div>
-
-    <div class="card">
-      <h2>Hotkeys</h2>
-      <label class="check">
-        <input type="checkbox" bind:checked={draft.hotkeys.enabled} />
-        <span>Register global hotkeys (X11 only)</span>
-      </label>
-
-      <label class="field">
-        <span>Region capture</span>
-        <input type="text" bind:value={draft.hotkeys.region} placeholder="PrintScreen" />
-      </label>
-      <label class="field">
-        <span>Fullscreen capture</span>
-        <input type="text" bind:value={draft.hotkeys.fullscreen} placeholder="Ctrl+PrintScreen" />
-      </label>
-      <label class="field">
-        <span>Window capture</span>
-        <input type="text" bind:value={draft.hotkeys.window} placeholder="Alt+PrintScreen" />
-      </label>
-
-      <p class="hint">
-        On Wayland the compositor usually grabs keys. Bind the CLI instead, e.g. in Hyprland:<br />
-        <code>bind = , PRINT, exec, sharev capture region</code>
-      </p>
     </div>
   </div>
 
@@ -389,6 +482,24 @@
     padding: 0.1rem 0.35rem;
     border-radius: 5px;
     font-size: 0.75rem;
+  }
+  .bindings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .binding {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .binding select {
+    flex: 1;
+    min-width: 0;
+  }
+  .binding input {
+    flex: 1;
+    min-width: 0;
   }
   .actions {
     display: flex;

@@ -35,7 +35,8 @@ impl CaptureKind {
 /// A fully specified capture request handed to a backend.
 #[derive(Debug, Clone)]
 pub enum CaptureRequest {
-    Fullscreen,
+    /// Fullscreen capture, optionally targeting a named monitor.
+    Fullscreen { monitor: Option<String> },
     /// `None` means "let the user select a region interactively".
     Region { geometry: Option<Geometry> },
     /// `None` means "use the currently focused window".
@@ -88,6 +89,9 @@ impl Geometry {
 pub struct CapturedImage {
     pub image: RgbaImage,
     pub backend: String,
+    /// The screen region that was captured, when known. Used to position a
+    /// pinned window over the original pixels.
+    pub geometry: Option<Geometry>,
 }
 
 impl CapturedImage {

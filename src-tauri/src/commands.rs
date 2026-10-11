@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
@@ -7,11 +8,19 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::capture::{self, CaptureKind, Geometry};
-use crate::config::{Config, ImageFormat};
+use crate::config::{Config, ImageFormat, Task};
 use crate::error::{Error, Result};
 use crate::pipeline::{self, CaptureResult};
 use crate::record;
-use crate::{clipboard, history, paths, AppState};
+use crate::{clipboard, history, paths, tasks, AppState};
+
+/// Sleep for the configured pre-capture delay.
+async fn apply_delay(seconds: Option<u32>) {
+    let seconds = seconds.unwrap_or(0);
+    if seconds > 0 {
+        tokio::time::sleep(Duration::from_secs(seconds as u64)).await;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -40,62 +49,131 @@ pub async fn capture(
     state: State<'_, AppState>,
     kind: String,
     geometry: Option<Geometry>,
+    monitor: Option<String>,
+    window_id: Option<String>,
+    delay_seconds: Option<u32>,
 ) -> Result<CaptureResult> {
     let capture_kind = CaptureKind::parse(&kind)?;
     let config = state.config.lock().unwrap().clone();
 
-    // Hide our own window first so it neither appears in the shot nor counts as
-    // the focused window, then give the compositor a moment to settle.
+    apply_delay(delay_seconds).await;
+
+    // Hide our own window so it neither appears in the shot nor counts as the
+    // focused window, then give the compositor a moment to settle.
     let window = app.get_webview_window("main");
     if let Some(window) = &window {
         let _ = window.hide();
         tokio::time::sleep(std::time::Duration::from_millis(220)).await;
     }
 
-    let outcome = pipeline::perform(&config, capture_kind, geometry).await;
+    let outcome = pipeline::grab(&config, capture_kind, geometry, monitor, window_id).await;
 
     if let Some(window) = &window {
         let _ = window.show();
         let _ = window.set_focus();
     }
 
-    let result = outcome?;
-    let _ = app.emit("capture-completed", &result);
-    if config.show_notification {
-        notify_success(&app, &result);
-    }
-    Ok(result)
+    let draft = outcome?;
+    finish_capture(&app, &config, draft).await
 }
 
-#[tauri::command]
-pub async fn capture_region(app: AppHandle, state: State<'_, AppState>) -> Result<CaptureResult> {
-    let config = state.config.lock().unwrap().clone();
-    let result = pipeline::perform(&config, CaptureKind::Region, None).await?;
+/// Run the task chain, announce the result and refresh the tray.
+async fn finish_capture(
+    app: &AppHandle,
+    config: &Config,
+    draft: pipeline::CaptureDraft,
+) -> Result<CaptureResult> {
+    let result = tasks::run(Some(app), config, draft).await?;
     let _ = app.emit("capture-completed", &result);
-    if config.show_notification {
-        notify_success(&app, &result);
-    }
+    crate::tray::refresh(app);
     Ok(result)
 }
 
 /// Shared entry point for the tray menu and global hotkeys.
 pub async fn capture_and_notify(app: AppHandle, kind: CaptureKind) {
     let config = app.state::<AppState>().config.lock().unwrap().clone();
-    match pipeline::perform(&config, kind, None).await {
-        Ok(result) => {
-            let _ = app.emit("capture-completed", &result);
-            if config.show_notification {
-                notify_success(&app, &result);
-            }
+
+    apply_delay(Some(config.capture_delay_seconds)).await;
+
+    let window = app.get_webview_window("main");
+    let was_visible = window.as_ref().and_then(|w| w.is_visible().ok()).unwrap_or(false);
+    if was_visible {
+        if let Some(window) = &window {
+            let _ = window.hide();
         }
+        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+    }
+
+    let outcome = pipeline::grab(&config, kind, None, None, None).await;
+
+    if was_visible
+        && let Some(window) = &window
+    {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+
+    match outcome {
+        Ok(draft) => match finish_capture(&app, &config, draft).await {
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("capture failed: {err}");
+                notify_error(&app, &err.to_string());
+            }
+        },
         Err(Error::Cancelled) => {}
         Err(err) => {
             log::warn!("capture failed: {err}");
-            if config.show_notification {
-                notify_error(&app, &err.to_string());
-            }
+            notify_error(&app, &err.to_string());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Windows & monitors
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn list_windows() -> Result<Vec<crate::wm::WindowInfo>> {
+    crate::wm::list_windows().await
+}
+
+#[tauri::command]
+pub async fn list_monitors() -> Result<Vec<crate::wm::MonitorInfo>> {
+    crate::wm::list_monitors().await
+}
+
+// ---------------------------------------------------------------------------
+// Pinned captures
+// ---------------------------------------------------------------------------
+
+/// Pin an existing image file to the screen.
+#[tauri::command]
+pub fn pin_capture(app: AppHandle, path: String) -> Result<String> {
+    if !Path::new(&path).exists() {
+        return Err(Error::msg("that file no longer exists"));
+    }
+    let (width, height) = image::image_dimensions(&path).unwrap_or((0, 0));
+    crate::pin::pin(&app, &path, width, height, None)
+}
+
+/// Data for a pin window to render itself (looked up by window label).
+#[tauri::command]
+pub fn pin_info(window: tauri::WebviewWindow) -> Option<crate::pin::PinInfo> {
+    crate::pin::info(window.label())
+}
+
+/// Pin the most recent capture in the history.
+#[tauri::command]
+pub fn pin_last(app: AppHandle) -> Result<Option<String>> {
+    let Some(entry) = history::list(Some(1))?.into_iter().next() else {
+        return Ok(None);
+    };
+    if !Path::new(&entry.path).exists() {
+        return Err(Error::msg("the last capture is no longer on disk"));
+    }
+    let (width, height) = image::image_dimensions(&entry.path).unwrap_or((entry.width, entry.height));
+    crate::pin::pin(&app, &entry.path, width, height, None).map(Some)
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +213,9 @@ pub fn apply_edits(
     let bytes = encoded.len() as u64;
 
     let mut copied = false;
-    if config.copy_to_clipboard && clipboard::copy_image(Path::new(&path), format).is_ok() {
+    if config.has_capture_task(Task::CopyImage)
+        && clipboard::copy_image(Path::new(&path), format).is_ok()
+    {
         copied = true;
     }
 
@@ -170,6 +250,8 @@ pub fn apply_edits(
         backend: entry.backend,
         created_at: entry.created_at,
         copied,
+        url: entry.url,
+        open_editor: false,
     })
 }
 
@@ -216,28 +298,59 @@ pub struct UploadOutcome {
     pub uploader: String,
 }
 
-/// Upload a saved capture to the configured destination and copy the link.
-#[tauri::command]
-pub async fn upload_path(state: State<'_, AppState>, path: String) -> Result<UploadOutcome> {
-    let config = state.config.lock().unwrap().clone();
-    let url = crate::upload::upload(&config, Path::new(&path)).await?;
-    let link = config.upload.copy_format.format(&url);
-    let copied = clipboard::copy_text(&link).is_ok();
-
-    // Record the URL on the matching history entry.
-    if let Some(mut entry) = history::find_by_path(&path) {
+/// Perform the upload itself and record the URL on the history entry.
+async fn do_upload(config: &Config, path: &str) -> Result<String> {
+    let url = crate::upload::upload(config, Path::new(path)).await?;
+    if let Some(mut entry) = history::find_by_path(path) {
         entry.url = Some(url.clone());
         if let Err(err) = history::replace(entry) {
             log::warn!("could not record upload url: {err}");
         }
     }
+    Ok(url)
+}
 
-    Ok(UploadOutcome {
+fn upload_outcome(config: &Config, path: &str, url: String, link: String, copied: bool) -> UploadOutcome {
+    let _ = path;
+    UploadOutcome {
         url,
         link,
         copied,
         uploader: config.upload.uploader.as_str().to_string(),
-    })
+    }
+}
+
+/// Upload a saved capture to the configured destination and run the
+/// post-upload tasks.
+#[tauri::command]
+pub async fn upload_path(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<UploadOutcome> {
+    let config = state.config.lock().unwrap().clone();
+    let url = do_upload(&config, &path).await?;
+    let (link, copied) = tasks::after_upload(Some(&app), &config, &url).await;
+    let outcome = upload_outcome(&config, &path, url, link, copied);
+    let _ = app.emit("upload-completed", &outcome);
+    Ok(outcome)
+}
+
+/// Upload the most recent capture in the history (used by the tray).
+#[tauri::command]
+pub async fn upload_last(app: AppHandle) -> Result<Option<UploadOutcome>> {
+    let config = app.state::<AppState>().config.lock().unwrap().clone();
+    let Some(entry) = history::list(Some(1))?.into_iter().next() else {
+        return Ok(None);
+    };
+    if !Path::new(&entry.path).exists() {
+        return Err(Error::msg("the last capture is no longer on disk"));
+    }
+    let url = do_upload(&config, &entry.path).await?;
+    let (link, copied) = tasks::after_upload(Some(&app), &config, &url).await;
+    let outcome = upload_outcome(&config, &entry.path, url, link, copied);
+    let _ = app.emit("upload-completed", &outcome);
+    Ok(Some(outcome))
 }
 
 // ---------------------------------------------------------------------------
@@ -294,24 +407,28 @@ pub struct AudioDevice {
     pub monitor: bool,
 }
 
-#[tauri::command]
-pub async fn start_recording(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    kind: String,
+/// Start a recording for `kind`, applying the configured pre-roll delay and
+/// monitor/window target. Shared by the Tauri command, the tray and hotkeys.
+async fn start_recording_inner(
+    app: &AppHandle,
+    kind: CaptureKind,
+    delay_seconds: u32,
+    monitor: Option<String>,
+    window_id: Option<String>,
 ) -> Result<RecordingInfo> {
-    let config = state.config.lock().unwrap().clone();
-    let capture_kind = CaptureKind::parse(&kind)?;
+    let config = app.state::<AppState>().config.lock().unwrap().clone();
 
-    if state.recorder.lock().unwrap().is_some() {
+    if app.state::<AppState>().recorder.lock().unwrap().is_some() {
         return Err(Error::msg("a recording is already in progress"));
     }
 
     let backend = record::choose_backend()?;
 
+    apply_delay(Some(delay_seconds)).await;
+
     // Hide our own window while the user picks a region/window.
+    let interactive = matches!(kind, CaptureKind::Region | CaptureKind::Window);
     let window = app.get_webview_window("main");
-    let interactive = matches!(capture_kind, CaptureKind::Region | CaptureKind::Window);
     if interactive {
         if let Some(window) = &window {
             let _ = window.hide();
@@ -319,20 +436,44 @@ pub async fn start_recording(
         tokio::time::sleep(std::time::Duration::from_millis(220)).await;
     }
 
-    let geometry = record::resolve_geometry(capture_kind, backend).await;
+    let monitor = monitor.unwrap_or_else(|| config.monitor.clone());
+    let geometry =
+        record::resolve_geometry(kind, backend, &monitor, window_id.as_deref()).await;
 
-    if let Some(window) = &window {
+    if interactive
+        && let Some(window) = &window
+    {
         let _ = window.show();
         let _ = window.set_focus();
     }
     let geometry = geometry?;
 
-    let request = record::build_request(&config, capture_kind, geometry);
+    let request = record::build_request(&config, kind, geometry);
     let active = record::start(request)?;
     let info = RecordingInfo::from_active(&active);
-    *state.recorder.lock().unwrap() = Some(active);
+    *app.state::<AppState>().recorder.lock().unwrap() = Some(active);
     let _ = app.emit("recording-started", &info);
+    crate::tray::refresh(app);
     Ok(info)
+}
+
+#[tauri::command]
+pub async fn start_recording(
+    app: AppHandle,
+    kind: String,
+    delay_seconds: Option<u32>,
+    monitor: Option<String>,
+    window_id: Option<String>,
+) -> Result<RecordingInfo> {
+    let capture_kind = CaptureKind::parse(&kind)?;
+    start_recording_inner(
+        &app,
+        capture_kind,
+        delay_seconds.unwrap_or(0),
+        monitor,
+        window_id,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -345,14 +486,48 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
 
     let result = stop_and_store(active, &config).await?;
     let _ = app.emit("recording-stopped", &result);
+    crate::tray::refresh(&app);
     Ok(result)
+}
+
+/// Start recording if idle, or stop the active recording (used by the tray and
+/// the `record-toggle` hotkey action).
+pub async fn toggle_recording(app: AppHandle, kind: CaptureKind) {
+    let active = app.state::<AppState>().recorder.lock().unwrap().is_some();
+    if active {
+        let config = app.state::<AppState>().config.lock().unwrap().clone();
+        let active = app.state::<AppState>().recorder.lock().unwrap().take();
+        if let Some(active) = active {
+            match stop_and_store(active, &config).await {
+                Ok(result) => {
+                    let _ = app.emit("recording-stopped", &result);
+                }
+                Err(err) => {
+                    log::warn!("recording failed: {err}");
+                    notify_error(&app, &err.to_string());
+                }
+            }
+        }
+        crate::tray::refresh(&app);
+    } else if let Err(err) = start_recording_inner(&app, kind, 0, None, None).await {
+        log::warn!("could not start recording: {err}");
+        notify_error(&app, &err.to_string());
+    }
 }
 
 /// Start a recording and return once the user interrupts the process (Ctrl-C).
 /// Used by the headless CLI so it can be bound to a compositor shortcut.
-pub async fn record_until_interrupt(config: &Config, kind: CaptureKind) -> Result<RecordingResult> {
+pub async fn record_until_interrupt(
+    config: &Config,
+    kind: CaptureKind,
+    delay_seconds: u32,
+    monitor: String,
+    window_id: Option<String>,
+) -> Result<RecordingResult> {
     let backend = record::choose_backend()?;
-    let geometry = record::resolve_geometry(kind, backend).await?;
+    apply_delay(Some(delay_seconds)).await;
+    let geometry =
+        record::resolve_geometry(kind, backend, &monitor, window_id.as_deref()).await?;
     let active = record::start(record::build_request(config, kind, geometry))?;
     tokio::signal::ctrl_c()
         .await
@@ -564,6 +739,10 @@ pub struct Diagnostics {
     pub save_directory: String,
     pub config_path: String,
     pub history_path: String,
+    /// Which hotkey mechanism is active ("portal", "global-shortcut" or "none").
+    pub hotkey_backend: String,
+    /// Whether the XDG portal GlobalShortcuts interface is reachable.
+    pub portal_shortcuts: bool,
 }
 
 pub fn diagnostics_info(state: &AppState) -> Diagnostics {
@@ -581,6 +760,8 @@ pub fn diagnostics_info(state: &AppState) -> Diagnostics {
         save_directory: config.resolved_save_dir().to_string_lossy().into_owned(),
         config_path: paths::config_file().to_string_lossy().into_owned(),
         history_path: paths::history_file().to_string_lossy().into_owned(),
+        hotkey_backend: crate::shortcuts::active_backend().to_string(),
+        portal_shortcuts: crate::shortcuts::portal_available(),
     }
 }
 
@@ -610,18 +791,6 @@ pub fn open_with(target: &str) -> Result<()> {
         .map_err(Error::Io)
 }
 
-fn notify_success(app: &AppHandle, result: &CaptureResult) {
-    let _ = app
-        .notification()
-        .builder()
-        .title("ShareV")
-        .body(format!(
-            "Saved {} ({}x{})",
-            result.file_name, result.width, result.height
-        ))
-        .show();
-}
-
 fn notify_error(app: &AppHandle, message: &str) {
     let _ = app
         .notification()
@@ -629,6 +798,11 @@ fn notify_error(app: &AppHandle, message: &str) {
         .title("ShareV capture failed")
         .body(message)
         .show();
+}
+
+/// Show an error notification (used by tray actions that fail).
+pub fn capture_error(app: &AppHandle, message: &str) {
+    notify_error(app, message);
 }
 
 #[cfg(test)]

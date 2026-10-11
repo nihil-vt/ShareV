@@ -3,10 +3,9 @@ use std::io::Cursor;
 use image::{codecs::jpeg::JpegEncoder, DynamicImage, ExtendedColorType, ImageFormat as ImageCrateFormat, RgbaImage};
 use serde::Serialize;
 
-use crate::capture::{self, CaptureKind, CaptureRequest, CapturedImage, Geometry};
+use crate::capture::{self, CaptureKind, CaptureRequest, Geometry};
 use crate::config::{self, Config, ImageFormat};
 use crate::error::{Error, Result};
-use crate::{clipboard, history};
 
 /// Everything the frontend needs to know about a finished capture.
 #[derive(Debug, Clone, Serialize)]
@@ -22,84 +21,68 @@ pub struct CaptureResult {
     pub backend: String,
     pub created_at: String,
     pub copied: bool,
+    /// URL returned by the `upload` task, if it ran successfully.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Whether the frontend should open the annotation editor.
+    pub open_editor: bool,
 }
 
-/// Run a full capture: select backend -> grab pixels -> save -> clipboard -> history.
+/// A capture that has been grabbed and encoded, but not yet acted on.
+pub struct CaptureDraft {
+    pub image: RgbaImage,
+    pub encoded: Vec<u8>,
+    pub format: ImageFormat,
+    pub kind: CaptureKind,
+    pub backend: String,
+    /// Screen region that was captured, when known.
+    pub geometry: Option<Geometry>,
+}
+
+/// Grab pixels from a backend and encode them, without saving or running tasks.
+pub async fn grab(
+    config: &Config,
+    kind: CaptureKind,
+    geometry: Option<Geometry>,
+    monitor: Option<String>,
+    window_id: Option<String>,
+) -> Result<CaptureDraft> {
+    let backend = capture::select_backend(&config.capture_backend)?;
+
+    let request = match kind {
+        CaptureKind::Fullscreen => {
+            let monitor = monitor.or_else(|| {
+                let configured = config.monitor.trim();
+                (!configured.is_empty()).then(|| configured.to_string())
+            });
+            CaptureRequest::Fullscreen { monitor }
+        }
+        CaptureKind::Region => CaptureRequest::Region { geometry },
+        CaptureKind::Window => CaptureRequest::Window { id: window_id },
+    };
+
+    let captured = backend.capture(request).await?;
+    let encoded = encode(&captured.image, config.image_format, config.jpeg_quality)?;
+
+    Ok(CaptureDraft {
+        image: captured.image,
+        encoded,
+        format: config.image_format,
+        kind,
+        backend: captured.backend,
+        geometry: captured.geometry,
+    })
+}
+
+/// Run a full capture with the default (non-interactive) parameters. Convenience
+/// wrapper used by the headless CLI.
 pub async fn perform(
     config: &Config,
     kind: CaptureKind,
     geometry: Option<Geometry>,
 ) -> Result<CaptureResult> {
-    let backend = capture::select_backend(&config.capture_backend)?;
-
-    let request = match kind {
-        CaptureKind::Fullscreen => CaptureRequest::Fullscreen,
-        CaptureKind::Region => CaptureRequest::Region { geometry },
-        CaptureKind::Window => CaptureRequest::Window { id: None },
-    };
-
-    let captured = backend.capture(request).await?;
-    persist(config, kind, captured).await
-}
-
-/// Persist an already-captured image according to the config.
-pub async fn persist(
-    config: &Config,
-    kind: CaptureKind,
-    captured: CapturedImage,
-) -> Result<CaptureResult> {
-    let format = config.image_format;
-    let encoded = encode(&captured.image, format, config.jpeg_quality)?;
-
-    let dir = config.resolved_save_dir();
-    let file_name = config::build_filename(&config.filename_template, format);
-    let path = config::unique_path(&dir.join(&file_name));
-    std::fs::write(&path, &encoded)?;
-
-    let id = crate::id::new_id();
-    let created_at = chrono::Local::now().to_rfc3339();
-    let width = captured.width();
-    let height = captured.height();
-
-    let mut copied = false;
-    if config.copy_to_clipboard {
-        match clipboard::copy_image(&path, format) {
-            Ok(()) => copied = true,
-            Err(err) => log::warn!("clipboard copy failed: {err}"),
-        }
-    }
-
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| file_name.clone());
-
-    let entry = history::HistoryEntry {
-        id: id.clone(),
-        path: path.to_string_lossy().into_owned(),
-        file_name: file_name.clone(),
-        kind: kind.as_str().to_string(),
-        width,
-        height,
-        bytes: encoded.len() as u64,
-        backend: captured.backend.clone(),
-        created_at: created_at.clone(),
-        url: None,
-    };
-    history::append(entry, config.max_history)?;
-
-    Ok(CaptureResult {
-        id,
-        path: path.to_string_lossy().into_owned(),
-        file_name,
-        kind: kind.as_str().to_string(),
-        width,
-        height,
-        bytes: encoded.len() as u64,
-        backend: captured.backend,
-        created_at,
-        copied,
-    })
+    let draft = grab(config, kind, geometry, None, None).await?;
+    crate::tasks::run(None, config, draft).await
 }
 
 /// Encode an RGBA image into the configured format.

@@ -226,3 +226,19 @@ button:focus-visible {
     display: none;
   }
 }
+
+/* ---- Pin windows ---- */
+/* A pinned capture is a borderless, transparent webview; hide the app chrome
+   and let the image float over the desktop. */
+.pin-mode,
+.pin-mode body,
+.pin-mode #app {
+  background: transparent;
+}
+.pin-mode .app,
+.pin-mode .content {
+  display: block;
+  height: auto;
+  padding: 0;
+  overflow: visible;
+}

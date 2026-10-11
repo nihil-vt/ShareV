@@ -30,12 +30,20 @@ impl CaptureBackend for WlrootsBackend {
 
     async fn capture(&self, request: CaptureRequest) -> Result<CapturedImage> {
         let geometry = match request {
-            CaptureRequest::Fullscreen => None,
+            CaptureRequest::Fullscreen { monitor } => match monitor {
+                Some(name) if !name.trim().is_empty() => {
+                    Some(crate::wm::monitor_geometry(&name).await?)
+                }
+                _ => None,
+            },
             CaptureRequest::Region { geometry } => Some(match geometry {
                 Some(g) => g,
                 None => select_region().await?,
             }),
-            CaptureRequest::Window { .. } => Some(active_window_geometry().await?),
+            CaptureRequest::Window { id } => Some(match id {
+                Some(id) if !id.trim().is_empty() => crate::wm::window_geometry(&id).await?,
+                _ => active_window_geometry().await?,
+            }),
         };
 
         let mut cmd = Command::new("grim");
@@ -61,6 +69,7 @@ impl CaptureBackend for WlrootsBackend {
         Ok(CapturedImage {
             image: decode_png(&output.stdout)?,
             backend: self.id().to_string(),
+            geometry,
         })
     }
 }

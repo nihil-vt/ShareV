@@ -50,5 +50,6 @@ tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
-# Optional, reserved for the XDG Desktop Portal backend (not wired up yet)
-ashpd = "0.13.13"
+# XDG Desktop Portal (Wayland global shortcuts).
+ashpd = { version = "0.13.13", features = ["global_shortcuts"] }
+futures-util = "0.3"

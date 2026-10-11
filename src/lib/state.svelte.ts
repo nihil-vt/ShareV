@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, type CaptureOptions } from './api';
 import type {
   AudioDevice,
   CaptureKind,
@@ -94,17 +94,17 @@ export async function uploadFile(path: string): Promise<UploadOutcome | null> {
   }
 }
 
-export async function doCapture(kind: CaptureKind) {
+export async function doCapture(kind: CaptureKind, options: CaptureOptions = {}) {
   if (app.busy) return;
   app.busy = true;
   app.busyKind = kind;
   try {
-    const result = await api.capture(kind);
+    const result = await api.capture(kind, options);
     app.last = result;
     app.lastUpload = null;
     await reloadHistory();
     toast(`Saved ${result.fileName}`, 'success');
-    if (app.config?.openEditorAfterCapture) {
+    if (result.openEditor && result.path) {
       app.editing = result;
       app.view = 'editor';
     }
@@ -147,10 +147,10 @@ export async function refreshRecordingStatus() {
 }
 
 /** Start recording a region, the full screen or a window. */
-export async function startRecording(kind: CaptureKind) {
+export async function startRecording(kind: CaptureKind, options: CaptureOptions = {}) {
   if (app.recording) return;
   try {
-    const info = await api.startRecording(kind);
+    const info = await api.startRecording(kind, options);
     app.recording = info;
     app.recordingStartedAt = Date.now();
     app.lastRecording = null;
@@ -191,4 +191,18 @@ export async function loadAudioDevices() {
   } catch {
     app.audioDevices = [];
   }
+}
+
+/** Pin the most recent capture to the screen (returns the pin window label). */
+export async function pinLastCapture(): Promise<string | null> {
+  const label = await api.pinLast();
+  if (label) toast('Pinned to screen — double-click it to close', 'success');
+  return label;
+}
+
+/** Upload the most recent capture (used by the tray / "Upload last" action). */
+export async function uploadLastCapture(): Promise<UploadOutcome | null> {
+  const outcome = await api.uploadLast();
+  if (outcome) toast(`Uploaded via ${outcome.uploader}`, 'success');
+  return outcome;
 }
