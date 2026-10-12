@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShareV — ShareX-style screen capture for Linux</title>
+  <meta name="description" content="ShareV is the open-source screen capture, annotation, and sharing tool for Linux. Region, fullscreen, and window capture with a built-in editor, task chains, and upload automation.">
+  <meta name="theme-color" content="#12151b">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="preconnect" href="https://github.com">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== Navigation ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-brand" aria-label="ShareV home">
+        <img src="assets/logo.svg" alt="ShareV logo" width="32" height="32">
+        <span>ShareV</span>
+      </a>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#workflow">Workflow</a></li>
+        <li><a href="#showcase">Showcase</a></li>
+        <li><a href="#download">Download</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="https://github.com/nihil-vt/ShareV" class="nav-github" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a></li>
+      </ul>
+      <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===== Hero ===== -->
+  <header class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-content container">
+      <img src="assets/logo.svg" alt="ShareV logo" class="hero-logo" width="80" height="80">
+      <h1>The ShareX experience, <span class="gradient-text">finally on Linux</span></h1>
+      <p>ShareV is the open-source screen capture, annotation, and sharing tool built natively for Linux. Capture, annotate, record, upload, and share — all in one app.</p>
+      <div class="hero-cta">
+        <a href="#download" class="btn btn-primary">Download for Linux</a>
+        <a href="https://github.com/nihil-vt/ShareV" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+      <div class="hero-illustration fade-in">
+        <img src="assets/hero-illustration.svg" alt="ShareV application interface illustration" width="600" height="400">
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Features ===== -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Everything ShareX does. On Linux.</h2>
+      <p class="section-desc">A complete screen capture and sharing workflow, built for Wayland and X11.</p>
+      <div class="features-grid">
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ff8c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </div>
+          <h3>Screen Capture</h3>
+          <p>Region, fullscreen, and window capture with delay timer and monitor picker. Works on Wayland and X11.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          </div>
+          <h3>Screen Recording</h3>
+          <p>Record to MP4, WebM, or animated GIF with system audio, microphone, or both. Configurable frame rate.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#7b5cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>
+          </div>
+          <h3>Annotation Editor</h3>
+          <p>Draw rectangles, ellipses, arrows, pen strokes, add text, pixelate sensitive info, and crop — with undo/redo.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#3fbf7f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          </div>
+          <h3>Task Chains</h3>
+          <p>Automate your post-capture and post-upload workflows: save, copy, upload, pin, run commands, notify.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ffcc00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <h3>Upload &amp; Share</h3>
+          <p>Upload to Imgur, any HTTP endpoint, or a custom shell command. Links copied as URL, Markdown, or HTML.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </div>
+          <h3>Pin to Screen</h3>
+          <p>Keep any capture floating on your desktop in a borderless, always-on-top, transparent window.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ff8c00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <h3>Global Hotkeys</h3>
+          <p>XDG Portal integration on Wayland, tauri-plugin-global-shortcut on X11. Or bind the CLI in your compositor.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          </div>
+          <h3>Headless CLI</h3>
+          <p>Scriptable commands for capture, record, upload, and pin. Designed for compositor keybindings.</p>
+        </div>
+        <div class="feature-card fade-in">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#7b5cff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </div>
+          <h3>Auto-Updates</h3>
+          <p>Signed in-app updates from GitHub Releases. .deb, .rpm, and AppImage packages for major distributions.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Workflow ===== -->
+  <section class="section workflow" id="workflow">
+    <div class="container">
+      <div class="section-label">Workflow</div>
+      <h2 class="section-title">Capture to share in seconds</h2>
+      <p class="section-desc">A streamlined pipeline from screen to shared link — no friction, no extra tools.</p>
+      <div class="workflow-diagram fade-in">
+        <img src="assets/workflow-diagram.svg" alt="Capture, Annotate, Upload, Share workflow diagram" width="800" height="200">
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Showcase ===== -->
+  <section class="section" id="showcase">
+    <div class="container">
+      <div class="section-label">Showcase</div>
+      <h2 class="section-title">See it in action</h2>
+      <p class="section-desc">Powerful features, beautifully integrated.</p>
+
+      <div class="showcase-item fade-in">
+        <div class="showcase-content">
+          <h3>Annotation Editor</h3>
+          <p>Mark up screenshots with a full set of tools. No external editor needed.</p>
+          <ul>
+            <li>Rectangles, ellipses, arrows, and freehand pen</li>
+            <li>Text tool with customizable colors and stroke width</li>
+            <li>Pixelate sensitive information before sharing</li>
+            <li>Undo/redo with up to 20 steps</li>
+          </ul>
+        </div>
+        <div class="showcase-visual">
+          <img src="assets/showcase-editor.svg" alt="Annotation editor interface mockup" width="500" height="350">
+        </div>
+      </div>
+
+      <div class="showcase-item reverse fade-in">
+        <div class="showcase-content">
+          <h3>Task Chains</h3>
+          <p>Automate what happens after each capture and upload. Define your own pipeline.</p>
+          <ul>
+            <li>Post-capture: save, copy, edit, upload, pin, notify</li>
+            <li>Post-upload: copy link, notify, open in browser</li>
+            <li>Ordered, editable task lists</li>
+            <li>Run custom shell commands with file substitution</li>
+          </ul>
+        </div>
+        <div class="showcase-visual">
+          <img src="assets/showcase-tasks.svg" alt="Task chain settings interface mockup" width="500" height="350">
+        </div>
+      </div>
+
+      <div class="showcase-item fade-in">
+        <div class="showcase-content">
+          <h3>Pin to Screen</h3>
+          <p>Keep reference images, notes, or designs always visible on your desktop.</p>
+          <ul>
+            <li>Borderless, transparent overlay window</li>
+            <li>Always on top, draggable, double-click to close</li>
+            <li>Available as a task, tray action, or CLI command</li>
+          </ul>
+        </div>
+        <div class="showcase-visual">
+          <img src="assets/showcase-pin.svg" alt="Pin window feature mockup" width="500" height="350">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Download ===== -->
+  <section class="section download" id="download">
+    <div class="container">
+      <div class="section-label">Download</div>
+      <h2 class="section-title">Get ShareV for Linux</h2>
+      <p class="section-desc">Available in multiple formats for major Linux distributions. Open source, MIT licensed.</p>
+      <div class="download-options fade-in">
+        <a href="https://github.com/nihil-vt/ShareV/releases" class="download-card" target="_blank" rel="noopener">
+          <div class="package-name">.deb</div>
+          <div class="package-desc">Debian / Ubuntu</div>
+        </a>
+        <a href="https://github.com/nihil-vt/ShareV/releases" class="download-card" target="_blank" rel="noopener">
+          <div class="package-name">.rpm</div>
+          <div class="package-desc">Fedora / openSUSE</div>
+        </a>
+        <a href="https://github.com/nihil-vt/ShareV/releases" class="download-card" target="_blank" rel="noopener">
+          <div class="package-name">AppImage</div>
+          <div class="package-desc">Any distribution</div>
+        </a>
+      </div>
+      <p class="download-note fade-in">Also available as a Flatpak. Requires Linux with Wayland or X11. <a href="https://github.com/nihil-vt/ShareV/releases" target="_blank" rel="noopener">View all releases on GitHub</a>.</p>
+    </div>
+  </section>
+
+  <!-- ===== FAQ ===== -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title">Frequently asked questions</h2>
+      <div class="faq-list">
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            Does ShareV work on Wayland?
+            <span class="faq-icon" aria-hidden="true"></span>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">Yes! ShareV supports both Wayland and X11. On wlroots-based compositors like Hyprland and Sway, it uses <code>grim</code> and <code>slurp</code> for capture. On X11, it uses ImageMagick's <code>import</code>. Global hotkeys use XDG Portal on Wayland and tauri-plugin-global-shortcut on X11.</div>
+          </div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            How do I set up Imgur uploads?
+            <span class="faq-icon" aria-hidden="true"></span>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">You need an Imgur API Client-ID (free). Register an application on Imgur, then paste the Client-ID in ShareV under Settings &rarr; Uploads. Uploads are anonymous — no Imgur account required.</div>
+          </div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            Can I use ShareV from the command line?
+            <span class="faq-icon" aria-hidden="true"></span>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">Absolutely. ShareV includes a headless CLI: <code>sharev capture region</code>, <code>sharev record fullscreen</code>, <code>sharev upload shot.png</code>, and more. Flags like <code>--delay</code>, <code>--monitor</code>, and <code>--window</code> are available. Perfect for binding in Hyprland, Sway, or any compositor.</div>
+          </div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            Does ShareV support auto-updates?
+            <span class="faq-icon" aria-hidden="true"></span>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">Yes. ShareV checks GitHub Releases for signed updates and installs them in-app. Flatpak installations delegate to the Flatpak updater. Updates are verified with cryptographic signatures for security.</div>
+          </div>
+        </div>
+        <div class="faq-item fade-in">
+          <button class="faq-question" aria-expanded="false">
+            Is ShareV free and open source?
+            <span class="faq-icon" aria-hidden="true"></span>
+          </button>
+          <div class="faq-answer">
+            <div class="faq-answer-inner">Yes! ShareV is fully open source under the MIT license. No tracking, no account required, no paid features. The source code is available on GitHub.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <img src="assets/logo.svg" alt="ShareV logo" width="24" height="24">
+          <span>ShareV</span>
+        </div>
+        <ul class="footer-links">
+          <li><a href="https://github.com/nihil-vt/ShareV" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/nihil-vt/ShareV/releases" target="_blank" rel="noopener">Releases</a></li>
+          <li><a href="https://github.com/nihil-vt/ShareV/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+        </ul>
+        <div class="footer-copy">Built with Tauri 2 + Svelte 5. &copy; 2026 ShareV contributors.</div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

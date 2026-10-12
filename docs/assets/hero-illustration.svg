@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400">
+  <defs>
+    <linearGradient id="heroGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff8c00"/>
+      <stop offset="100%" style="stop-color:#ffcc00"/>
+    </linearGradient>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1c212b"/>
+      <stop offset="100%" style="stop-color:#12151b"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f8cff"/>
+      <stop offset="100%" style="stop-color:#7b5cff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background glow -->
+  <ellipse cx="300" cy="200" rx="280" ry="180" fill="url(#accentGrad)" opacity="0.06"/>
+
+  <!-- Main window -->
+  <rect x="100" y="60" width="400" height="280" rx="16" fill="url(#screenGrad)" stroke="#2b3240" stroke-width="1.5"/>
+
+  <!-- Title bar -->
+  <rect x="100" y="60" width="400" height="40" rx="16" fill="#171b22"/>
+  <rect x="100" y="84" width="400" height="16" fill="#171b22"/>
+  <circle cx="124" cy="80" r="5" fill="#ff6b6b"/>
+  <circle cx="142" cy="80" r="5" fill="#ffcc00"/>
+  <circle cx="160" cy="80" r="5" fill="#3fbf7f"/>
+  <text x="300" y="85" text-anchor="middle" fill="#98a2b3" font-size="11" font-family="system-ui">ShareV</text>
+
+  <!-- Sidebar -->
+  <rect x="100" y="100" width="80" height="240" fill="#171b22"/>
+  <rect x="100" y="100" width="80" height="240" rx="0" fill="#171b22"/>
+  <rect x="100" y="324" width="80" height="16" fill="#171b22"/>
+
+  <!-- Sidebar icons -->
+  <rect x="116" y="116" width="16" height="16" rx="4" fill="url(#heroGrad)"/>
+  <rect x="116" y="146" width="16" height="16" rx="4" fill="#2b3240"/>
+  <rect x="116" y="176" width="16" height="16" rx="4" fill="#2b3240"/>
+  <rect x="116" y="206" width="16" height="16" rx="4" fill="#2b3240"/>
+  <rect x="116" y="236" width="16" height="16" rx="4" fill="#2b3240"/>
+  <rect x="116" y="266" width="16" height="16" rx="4" fill="#2b3240"/>
+  <rect x="116" y="296" width="16" height="16" rx="4" fill="#2b3240"/>
+
+  <!-- Content area -->
+  <rect x="196" y="116" width="130" height="90" rx="10" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <rect x="336" y="116" width="130" height="90" rx="10" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <rect x="196" y="216" width="270" height="110" rx="10" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+
+  <!-- Capture region overlay -->
+  <rect x="220" y="240" width="180" height="60" rx="6" fill="none" stroke="url(#heroGrad)" stroke-width="2" stroke-dasharray="6 4"/>
+  <circle cx="220" cy="240" r="4" fill="url(#heroGrad)"/>
+  <circle cx="400" cy="240" r="4" fill="url(#heroGrad)"/>
+  <circle cx="220" cy="300" r="4" fill="url(#heroGrad)"/>
+  <circle cx="400" cy="300" r="4" fill="url(#heroGrad)"/>
+
+  <!-- Annotation shapes -->
+  <rect x="240" y="255" width="40" height="25" rx="3" fill="none" stroke="#4f8cff" stroke-width="2"/>
+  <line x1="290" y1="267" x2="330" y2="267" stroke="#ff6b6b" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <circle cx="360" cy="267" r="12" fill="none" stroke="#3fbf7f" stroke-width="2"/>
+
+  <!-- Floating elements -->
+  <rect x="460" y="140" width="100" height="70" rx="10" fill="#1c212b" stroke="url(#accentGrad)" stroke-width="1.5" opacity="0.9"/>
+  <rect x="470" y="155" width="80" height="40" rx="6" fill="#232936"/>
+  <text x="510" y="180" text-anchor="middle" fill="#98a2b3" font-size="9" font-family="system-ui">Pin Window</text>
+
+  <!-- Cursor -->
+  <path d="M440 300l0-20 5 5 8-8 3 3-8 8 5 5z" fill="#e7ebf2" opacity="0.8"/>
+
+  <!-- Decorative dots -->
+  <circle cx="80" cy="120" r="3" fill="url(#heroGrad)" opacity="0.4"/>
+  <circle cx="520" cy="300" r="3" fill="url(#accentGrad)" opacity="0.4"/>
+  <circle cx="60" cy="280" r="2" fill="#4f8cff" opacity="0.3"/>
+  <circle cx="540" cy="100" r="2" fill="#ffcc00" opacity="0.3"/>
+</svg>

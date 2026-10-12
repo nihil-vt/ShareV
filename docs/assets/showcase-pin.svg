@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350" width="500" height="350">
+  <defs>
+    <linearGradient id="spGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff8c00"/>
+      <stop offset="100%" style="stop-color:#ffcc00"/>
+    </linearGradient>
+    <linearGradient id="spAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f8cff"/>
+      <stop offset="100%" style="stop-color:#7b5cff"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="480" height="330" rx="16" fill="#12151b" stroke="#2b3240" stroke-width="1.5"/>
+  <rect x="10" y="10" width="480" height="36" rx="16" fill="#171b22"/>
+  <rect x="10" y="30" width="480" height="16" fill="#171b22"/>
+  <circle cx="30" cy="28" r="4" fill="#ff6b6b"/>
+  <circle cx="46" cy="28" r="4" fill="#ffcc00"/>
+  <circle cx="62" cy="28" r="4" fill="#3fbf7f"/>
+  <text x="250" y="33" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Pin Window</text>
+  <rect x="30" y="56" width="440" height="274" rx="10" fill="#1c212b"/>
+  <rect x="60" y="80" width="180" height="120" rx="8" fill="#232936" stroke="url(#spGrad)" stroke-width="2"/>
+  <rect x="80" y="100" width="60" height="35" rx="3" fill="none" stroke="#4f8cff" stroke-width="2"/>
+  <line x1="155" y1="117" x2="200" y2="117" stroke="#ff6b6b" stroke-width="2"/>
+  <circle cx="220" cy="117" r="12" fill="none" stroke="#3fbf7f" stroke-width="2"/>
+  <rect x="280" y="80" width="160" height="120" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <text x="360" y="115" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Desktop</text>
+  <rect x="300" y="130" width="120" height="50" rx="4" fill="#1c212b"/>
+  <rect x="60" y="220" width="180" height="80" rx="8" fill="#232936" stroke="url(#spAccent)" stroke-width="2"/>
+  <circle cx="100" cy="250" r="15" fill="none" stroke="#7b5cff" stroke-width="2"/>
+  <line x1="125" y1="250" x2="180" y2="250" stroke="#ffcc00" stroke-width="2"/>
+  <rect x="280" y="220" width="160" height="80" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <text x="360" y="255" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Always on top</text>
+  <text x="360" y="275" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Transparent</text>
+</svg>
