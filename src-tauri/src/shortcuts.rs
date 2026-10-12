@@ -16,7 +16,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::capture::CaptureKind;
 use crate::config::{Config, HotkeyBackend, HotkeyBinding};
-use crate::platform::display::{detect, DisplayServer};
+use crate::platform::display::{DisplayServer, detect};
 
 /// A user-triggerable action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,7 @@ pub enum Action {
     CaptureRegion,
     CaptureFullscreen,
     CaptureWindow,
+    CaptureScrolling,
     RecordToggle,
     OpenEditor,
 }
@@ -35,6 +36,7 @@ impl Action {
             "capture-region" | "capture" | "region" => Some(Action::CaptureRegion),
             "capture-fullscreen" | "fullscreen" => Some(Action::CaptureFullscreen),
             "capture-window" | "window" => Some(Action::CaptureWindow),
+            "capture-scrolling" | "scrolling" | "scroll" => Some(Action::CaptureScrolling),
             "record-toggle" | "record" | "toggle-recording" => Some(Action::RecordToggle),
             "open-editor" | "editor" => Some(Action::OpenEditor),
             _ => None,
@@ -46,6 +48,7 @@ impl Action {
             Action::CaptureRegion => "capture-region",
             Action::CaptureFullscreen => "capture-fullscreen",
             Action::CaptureWindow => "capture-window",
+            Action::CaptureScrolling => "capture-scrolling",
             Action::RecordToggle => "record-toggle",
             Action::OpenEditor => "open-editor",
         }
@@ -56,6 +59,7 @@ impl Action {
             Action::CaptureRegion => "Capture a region",
             Action::CaptureFullscreen => "Capture the screen",
             Action::CaptureWindow => "Capture a window",
+            Action::CaptureScrolling => "Capture a scrolling region",
             Action::RecordToggle => "Start/stop recording",
             Action::OpenEditor => "Open ShareV",
         }
@@ -136,7 +140,12 @@ pub fn reload(app: &AppHandle, config: &Config) {
 /// Re-register the plugin bindings from the current config (used when the portal
 /// turns out to be unavailable).
 pub fn register_from_config(app: &AppHandle) {
-    let config = app.state::<crate::AppState>().config.lock().unwrap().clone();
+    let config = app
+        .state::<crate::AppState>()
+        .config
+        .lock()
+        .unwrap()
+        .clone();
     register_plugin(app, config.hotkeys.effective_bindings());
 }
 
@@ -191,6 +200,9 @@ pub fn dispatch(app: &AppHandle, action: Action) {
             }
             Action::CaptureWindow => {
                 crate::commands::capture_and_notify(app, CaptureKind::Window).await
+            }
+            Action::CaptureScrolling => {
+                crate::commands::capture_and_notify(app, CaptureKind::Scrolling).await
             }
             Action::RecordToggle => {
                 crate::commands::toggle_recording(app, CaptureKind::Region).await
@@ -263,6 +275,10 @@ mod tests {
     #[test]
     fn parses_action_ids() {
         assert_eq!(Action::parse("capture-region"), Some(Action::CaptureRegion));
+        assert_eq!(
+            Action::parse("capture-scrolling"),
+            Some(Action::CaptureScrolling)
+        );
         assert_eq!(Action::parse(" Record-Toggle "), Some(Action::RecordToggle));
         assert_eq!(Action::parse("open-editor"), Some(Action::OpenEditor));
         assert_eq!(Action::parse("bogus"), None);

@@ -4,7 +4,7 @@
   import { app, loadAudioDevices, saveConfig, toast } from '../state.svelte';
   import { checkForUpdates, initUpdates, installUpdate, updateProgress, updates } from '../updates.svelte';
   import TaskChainEditor from './TaskChainEditor.svelte';
-  import type { CaptureTask, Config } from '../types';
+  import type { CaptureTask, Config, EffectKind } from '../types';
 
   const initial = structuredClone($state.snapshot(app.config)) as Config;
   let draft = $state<Config>(initial);
@@ -27,6 +27,7 @@
     'pin',
     'command',
     'notify',
+    'ocr',
   ];
   const uploadTasks: CaptureTask[] = ['copyLink', 'notify', 'open'];
 
@@ -34,6 +35,7 @@
     { value: 'capture-region', label: 'Capture region' },
     { value: 'capture-fullscreen', label: 'Capture fullscreen' },
     { value: 'capture-window', label: 'Capture window' },
+    { value: 'capture-scrolling', label: 'Capture scrolling' },
     { value: 'record-toggle', label: 'Toggle recording' },
     { value: 'open-editor', label: 'Open editor' },
   ];
@@ -44,6 +46,49 @@
     { value: 'global-shortcut', label: 'Global Shortcut (X11)' },
     { value: 'none', label: 'None' },
   ];
+
+  const effectKinds: { value: EffectKind; label: string }[] = [
+    { value: 'shadow', label: 'Drop shadow' },
+    { value: 'border', label: 'Border' },
+    { value: 'canvasResize', label: 'Canvas padding' },
+    { value: 'roundedCorners', label: 'Rounded corners' },
+    { value: 'blur', label: 'Blur' },
+    { value: 'watermark', label: 'Watermark' },
+  ];
+
+  const watermarkPositions = [
+    'top-left',
+    'top-right',
+    'bottom-left',
+    'bottom-right',
+    'center',
+  ];
+
+  let ocrStatus = $state<{ available: boolean; languages: string[] } | null>(null);
+  let checkingOcr = $state(false);
+
+  async function checkOcr() {
+    checkingOcr = true;
+    try {
+      ocrStatus = await api.ocrStatus();
+    } catch (err) {
+      toast(String(err), 'error');
+    } finally {
+      checkingOcr = false;
+    }
+  }
+
+  function hasEffect(kind: EffectKind): boolean {
+    return draft.effects.effects.includes(kind);
+  }
+
+  function toggleEffect(kind: EffectKind) {
+    const current = draft.effects.effects;
+    const next = current.includes(kind)
+      ? current.filter((k) => k !== kind)
+      : [...current, kind];
+    draft.effects = { ...draft.effects, effects: next };
+  }
 
   async function browse() {
     try {
@@ -181,6 +226,190 @@
         available={uploadTasks}
         onChange={setAfterUpload}
       />
+    </div>
+
+    <div class="card">
+      <h2>OCR</h2>
+      <p class="hint">
+        Recognise text with Tesseract. Add the "Run OCR" task above to copy the result to the
+        clipboard after a capture.
+      </p>
+
+      <label class="field">
+        <span>Language</span>
+        <input type="text" bind:value={draft.ocrLanguage} placeholder="eng" />
+      </label>
+
+      <div class="inline">
+        <button class="ghost" onclick={checkOcr} disabled={checkingOcr}>
+          {checkingOcr ? 'Checking…' : 'Check Tesseract'}
+        </button>
+      </div>
+
+      {#if ocrStatus}
+        {#if ocrStatus.available}
+          <p class="hint">
+            Tesseract is installed. Languages:
+            {ocrStatus.languages.length ? ocrStatus.languages.join(', ') : 'none detected'}
+          </p>
+        {:else}
+          <p class="hint error">Tesseract is not installed. Install it to use OCR.</p>
+        {/if}
+      {/if}
+    </div>
+
+    <div class="card">
+      <h2>Scrolling capture</h2>
+      <p class="hint">
+        A region is captured repeatedly while you scroll, then stitched into one tall image.
+      </p>
+
+      <label class="field">
+        <span>Maximum frames</span>
+        <input type="number" min="1" max="300" bind:value={draft.scroll.maxFrames} />
+      </label>
+      <label class="field">
+        <span>Delay between frames ({draft.scroll.frameDelayMs} ms)</span>
+        <input
+          type="range"
+          min="100"
+          max="2000"
+          step="50"
+          bind:value={draft.scroll.frameDelayMs}
+        />
+      </label>
+      <label class="field">
+        <span>Stop similarity ({Math.round(draft.scroll.similarityThreshold * 100)}%)</span>
+        <input
+          type="range"
+          min="0.8"
+          max="1"
+          step="0.01"
+          bind:value={draft.scroll.similarityThreshold}
+        />
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Image effects</h2>
+      <p class="hint">Applied to the saved capture, in the order listed.</p>
+
+      <div class="effects">
+        {#each effectKinds as effect (effect.value)}
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={hasEffect(effect.value)}
+              onchange={() => toggleEffect(effect.value)}
+            />
+            <span>{effect.label}</span>
+          </label>
+        {/each}
+      </div>
+
+      {#if hasEffect('shadow')}
+        <fieldset>
+          <legend>Shadow</legend>
+          <label class="field">
+            <span>Offset X</span>
+            <input type="number" bind:value={draft.effects.shadow.offsetX} />
+          </label>
+          <label class="field">
+            <span>Offset Y</span>
+            <input type="number" bind:value={draft.effects.shadow.offsetY} />
+          </label>
+          <label class="field">
+            <span>Blur ({draft.effects.shadow.blurRadius})</span>
+            <input type="range" min="0" max="40" step="1" bind:value={draft.effects.shadow.blurRadius} />
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input type="color" bind:value={draft.effects.shadow.color} />
+          </label>
+          <label class="field">
+            <span>Opacity ({Math.round(draft.effects.shadow.opacity * 100)}%)</span>
+            <input type="range" min="0" max="1" step="0.05" bind:value={draft.effects.shadow.opacity} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('border')}
+        <fieldset>
+          <legend>Border</legend>
+          <label class="field">
+            <span>Width</span>
+            <input type="number" min="1" max="100" bind:value={draft.effects.border.width} />
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input type="color" bind:value={draft.effects.border.color} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('canvasResize')}
+        <fieldset>
+          <legend>Canvas padding</legend>
+          <label class="field">
+            <span>Padding</span>
+            <input type="number" min="1" max="200" bind:value={draft.effects.canvasResize.padding} />
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input type="color" bind:value={draft.effects.canvasResize.color} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('roundedCorners')}
+        <fieldset>
+          <legend>Rounded corners</legend>
+          <label class="field">
+            <span>Radius</span>
+            <input type="number" min="1" max="200" bind:value={draft.effects.roundedCorners.radius} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('blur')}
+        <fieldset>
+          <legend>Blur</legend>
+          <label class="field">
+            <span>Radius ({draft.effects.blur.radius})</span>
+            <input type="range" min="0" max="40" step="0.5" bind:value={draft.effects.blur.radius} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('watermark')}
+        <fieldset>
+          <legend>Watermark</legend>
+          <label class="field">
+            <span>Text</span>
+            <input type="text" bind:value={draft.effects.watermark.text} />
+          </label>
+          <label class="field">
+            <span>Font size</span>
+            <input type="number" min="8" max="200" bind:value={draft.effects.watermark.fontSize} />
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input type="color" bind:value={draft.effects.watermark.color} />
+          </label>
+          <label class="field">
+            <span>Opacity ({Math.round(draft.effects.watermark.opacity * 100)}%)</span>
+            <input type="range" min="0" max="1" step="0.05" bind:value={draft.effects.watermark.opacity} />
+          </label>
+          <label class="field">
+            <span>Position</span>
+            <select bind:value={draft.effects.watermark.position}>
+              {#each watermarkPositions as position (position)}
+                <option value={position}>{position}</option>
+              {/each}
+            </select>
+          </label>
+        </fieldset>
+      {/if}
     </div>
 
     <div class="card">
@@ -470,6 +699,28 @@
     gap: 0.55rem;
     font-size: 0.9rem;
     cursor: pointer;
+  }
+  .effects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.35rem 0.8rem;
+  }
+  fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-3);
+  }
+  fieldset legend {
+    padding: 0 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
   .hint {
     margin: 0;

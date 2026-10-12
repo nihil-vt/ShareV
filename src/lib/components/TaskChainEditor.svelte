@@ -22,6 +22,7 @@
     command: 'Run command',
     notify: 'Notify',
     copyLink: 'Copy link',
+    ocr: 'Run OCR',
   };
 
   const descriptions: Partial<Record<CaptureTask, string>> = {
@@ -35,6 +36,7 @@
     command: 'Run the after-capture shell command.',
     notify: 'Show a desktop notification.',
     copyLink: 'Copy the upload link to the clipboard.',
+    ocr: 'Run text recognition (Tesseract) and copy the result to the clipboard.',
   };
 
   const remaining = $derived(available.filter((t) => !tasks.includes(t)));

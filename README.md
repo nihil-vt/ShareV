@@ -3,25 +3,36 @@
 A ShareX-style screen capture and sharing tool for Linux, built with
 [Tauri 2](https://tauri.app) + [Svelte 5](https://svelte.dev).
 
-> Status: **milestone 6 — capture workflow**. Capture a region, the
+> Status: **milestone 11 — auto capture & monitoring**. Capture a region, the
 > fullscreen, a specific monitor, or a specific window; pick a delay before the
 > shot; run a chain of tasks after each capture (save, copy, upload, pin to
-> screen, open the editor, run a command, notify); and record the screen to MP4,
-> WebM or GIF. Global hotkeys work on Wayland through the XDG portal. OCR and the
-> rest of ShareX's toolset come next.
+> screen, open the editor, run a command, notify, OCR); apply a post-capture
+> image-effects pipeline; stitch long pages with scrolling capture; capture on a
+> timer with change detection; and record the screen to MP4, WebM or GIF. Global
+> hotkeys work on Wayland through the XDG portal.
 
 ## Features (current)
 
 - **Region / Fullscreen / Window capture**, with a **delay timer** and a
   **monitor picker**
 - **Window picker** to capture one specific window (Hyprland, Sway, X11)
+- **Scrolling capture** — select a region, scroll, and ShareV stitches the
+  frames into a single tall image (overlap detection + row-signature matching)
+- **Auto capture** — grab a locked region (or the screen) on an interval, save
+  only when the content changes, and stop after N captures or a time limit
+  (`sharev capture auto`); live controls in the Capture view
 - **Task chains** — ordered post-capture and post-upload tasks (save, history,
-  copy, editor, open, upload, pin, command, notify / copy link, notify, open),
-  editable in Settings with automatic migration from the legacy flags
+  copy, editor, open, upload, pin, command, notify, OCR / copy link, notify,
+  open), editable in Settings with automatic migration from the legacy flags
+- **OCR** — extract text with Tesseract (`sharev ocr <path>`, the **Run OCR**
+  task, or the editor), copied straight to the clipboard; configurable language
+- **Image effects** — shadow, border, watermark, canvas padding, blur and
+  rounded corners, applied in sequence after saving
 - **Pin-to-screen** — keep a capture floating in a borderless, always-on-top,
   transparent window
-- **Annotation editor** — rectangle, ellipse, arrow, pen, text, pixelate and
-  crop tools with colour/width controls and undo/redo
+- **Annotation editor** — rectangle, ellipse, arrow, pen, text, speech balloon,
+  magnifier, spotlight, cursor, pixelate, blur and crop tools with colour, fill,
+  line-style, opacity, font and arrowhead controls and undo/redo
 - **Screen recording** — MP4/H.264, WebM/VP9 or animated GIF, with configurable
   frame rate and optional system-audio and/or microphone capture
 - **Save** to a configurable directory with a strftime filename template
@@ -32,7 +43,8 @@ A ShareX-style screen capture and sharing tool for Linux, built with
   Markdown or HTML
 - **History** with thumbnails, search and per-item actions (open, copy, edit,
   upload, remove) plus the saved upload URL
-- **System tray** menu with capture, recording toggle, pin-last and upload-last
+- **System tray** menu with capture, scrolling capture, recording toggle,
+  pin-last and upload-last
 - **Global hotkeys** on Wayland (XDG portal) and X11
   (`tauri-plugin-global-shortcut`), with a binding editor in Settings
 - **Headless CLI** for compositor bindings, with `--delay`, `--monitor` and
@@ -53,6 +65,9 @@ Runtime tools (at least one capture backend must be present):
 | `portal`  | any Wayland    | not implemented yet           |
 
 Clipboard: `wl-clipboard` (`wl-copy`) on Wayland or `xclip` on X11.
+
+OCR needs `tesseract` (plus any extra language packs you want, e.g.
+`tesseract-data-fra`).
 
 Window and monitor enumeration needs `hyprctl` (Hyprland), `swaymsg` (Sway), or
 `wmctrl` + `xrandr` (X11).
@@ -146,9 +161,13 @@ fallback when hotkeys are unavailable:
 sharev capture region        # select a region, prints the saved path
 sharev capture fullscreen
 sharev capture window
+sharev capture scrolling     # scroll a region, stitch it into one image
+sharev capture auto          # capture on an interval (Ctrl-C to stop)
+sharev capture auto --interval 500 --change --max-count 20
 sharev capture fullscreen --monitor HDMI-1 --delay 3
 sharev capture window --window 0x123
 sharev upload shot.png       # upload a file, prints the URL (and copies the link)
+sharev ocr shot.png          # run OCR, print the text (and copy it)
 sharev record region         # record until Ctrl-C, then print the path
 sharev record fullscreen
 sharev record window
@@ -228,12 +247,17 @@ src-tauri/src/
   history.rs              capture history store
   pipeline.rs             capture -> encode -> save -> clipboard -> history
   tasks.rs                post-capture / post-upload task execution
+  effects.rs              shadow / border / watermark / padding / blur / corners
+  ocr.rs                  Tesseract text recognition
+  scroll.rs               scrolling-capture frame stitching
+  auto.rs                 timed / change-detection auto capture
   record.rs               wf-recorder / ffmpeg screen recording
   upload.rs               Imgur / HTTP / command uploaders
   commands.rs             Tauri commands
   tray.rs / shortcuts.rs  tray icon + global hotkeys
   portal_shortcuts.rs     XDG portal GlobalShortcuts (ashpd)
   pin.rs                  pin-to-screen window registry
+  editor.rs               annotation-editor window registry
   wm.rs                   window / monitor enumeration
   cli.rs                  headless command line
 ```

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type {
   AudioDevice,
+  AutoCaptureInfo,
   CaptureKind,
   CaptureResult,
   Config,
@@ -25,6 +26,17 @@ export interface CaptureOptions {
   delaySeconds?: number;
 }
 
+/** Optional overrides for an auto-capture session. */
+export interface AutoCaptureOptions {
+  intervalMs?: number;
+  changeDetection?: boolean;
+  changeThreshold?: number;
+  maxCount?: number;
+  maxDurationSeconds?: number;
+  monitor?: string;
+  windowId?: string;
+}
+
 /** Typed wrappers around the Rust commands. */
 export const api = {
   getConfig: () => invoke<Config>('get_config'),
@@ -38,6 +50,25 @@ export const api = {
       windowId: options.windowId ?? null,
       delaySeconds: options.delaySeconds ?? null,
     }),
+
+  captureScrolling: (delaySeconds?: number) =>
+    invoke<CaptureResult>('capture_scrolling', {
+      delaySeconds: delaySeconds ?? null,
+    }),
+
+  startAutoCapture: (kind: CaptureKind, options: AutoCaptureOptions = {}) =>
+    invoke<AutoCaptureInfo>('start_auto_capture', {
+      kind,
+      intervalMs: options.intervalMs ?? null,
+      changeDetection: options.changeDetection ?? null,
+      changeThreshold: options.changeThreshold ?? null,
+      maxCount: options.maxCount ?? null,
+      maxDurationSeconds: options.maxDurationSeconds ?? null,
+      monitor: options.monitor ?? null,
+      windowId: options.windowId ?? null,
+    }),
+  stopAutoCapture: () => invoke<AutoCaptureInfo>('stop_auto_capture'),
+  autoCaptureStatus: () => invoke<AutoCaptureInfo | null>('auto_capture_status'),
 
   listWindows: () => invoke<WindowInfo[]>('list_windows'),
   listMonitors: () => invoke<MonitorInfo[]>('list_monitors'),
@@ -63,6 +94,9 @@ export const api = {
   copyEdits: (data: string) => invoke<void>('copy_edits', { data }),
   openEditor: (path: string) => invoke<string>('open_editor', { path }),
   editorInfo: () => invoke<EditorInfo | null>('editor_info'),
+  ocrStatus: () => invoke<{ available: boolean; languages: string[] }>('ocr_status'),
+  ocrRecognize: (path: string, language: string) =>
+    invoke<string>('ocr_recognize', { path, language }),
 
   uploadPath: (path: string) => invoke<UploadOutcome>('upload_path', { path }),
   uploadLast: () => invoke<UploadOutcome | null>('upload_last'),

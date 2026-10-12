@@ -13,9 +13,9 @@
 
 use serde::Serialize;
 
-use crate::capture::{which, Geometry};
+use crate::capture::{Geometry, which};
 use crate::error::{Error, Result};
-use crate::platform::display::{detect, DisplayServer};
+use crate::platform::display::{DisplayServer, detect};
 
 /// A window the user can target.
 #[derive(Debug, Clone, Serialize)]
@@ -82,12 +82,14 @@ pub async fn monitor_geometry(name: &str) -> Result<Geometry> {
         })
     };
 
-    chosen.map(|m| Geometry {
-        x: m.x,
-        y: m.y,
-        width: m.width,
-        height: m.height,
-    }).ok_or_else(|| Error::msg(format!("no monitor named '{wanted}'")))
+    chosen
+        .map(|m| Geometry {
+            x: m.x,
+            y: m.y,
+            width: m.width,
+            height: m.height,
+        })
+        .ok_or_else(|| Error::msg(format!("no monitor named '{wanted}'")))
 }
 
 async fn hyprland_monitors() -> Result<Vec<MonitorInfo>> {
@@ -343,10 +345,12 @@ async fn hyprland_windows() -> Result<Vec<WindowInfo>> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                x: at.and_then(|a| a.first())
+                x: at
+                    .and_then(|a| a.first())
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0) as i32,
-                y: at.and_then(|a| a.get(1))
+                y: at
+                    .and_then(|a| a.get(1))
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0) as i32,
                 width,
@@ -499,7 +503,12 @@ Monitors: 2
         assert_eq!(monitors.len(), 2);
         assert_eq!(monitors[0].name, "eDP-1");
         assert_eq!(
-            (monitors[0].x, monitors[0].y, monitors[0].width, monitors[0].height),
+            (
+                monitors[0].x,
+                monitors[0].y,
+                monitors[0].width,
+                monitors[0].height
+            ),
             (0, 0, 1920, 1080)
         );
         assert!(monitors[0].focused);
@@ -526,7 +535,10 @@ Monitors: 2
         assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].id, "0x03400007");
         assert_eq!(windows[0].title, "Title With Spaces");
-        assert_eq!((windows[0].x, windows[0].y, windows[0].width), (100, 200, 800));
+        assert_eq!(
+            (windows[0].x, windows[0].y, windows[0].width),
+            (100, 200, 800)
+        );
         assert_eq!(windows[1].title, "Terminal");
     }
 

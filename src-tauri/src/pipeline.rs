@@ -1,6 +1,10 @@
 use std::io::Cursor;
+use std::time::Duration;
 
-use image::{codecs::jpeg::JpegEncoder, DynamicImage, ExtendedColorType, ImageFormat as ImageCrateFormat, RgbaImage};
+use image::{
+    DynamicImage, ExtendedColorType, ImageFormat as ImageCrateFormat, RgbaImage,
+    codecs::jpeg::JpegEncoder,
+};
 use serde::Serialize;
 
 use crate::capture::{self, CaptureKind, CaptureRequest, Geometry};
@@ -59,6 +63,9 @@ pub async fn grab(
         }
         CaptureKind::Region => CaptureRequest::Region { geometry },
         CaptureKind::Window => CaptureRequest::Window { id: window_id },
+        // A single grab of a scrolling capture behaves like a region capture;
+        // `grab_scrolling` performs the actual multi-frame stitching.
+        CaptureKind::Scrolling => CaptureRequest::Region { geometry },
     };
 
     let captured = backend.capture(request).await?;
@@ -69,6 +76,96 @@ pub async fn grab(
         encoded,
         format: config.image_format,
         kind,
+        backend: captured.backend,
+        geometry: captured.geometry,
+    })
+}
+
+/// Capture a region repeatedly while the user scrolls, then stitch the frames
+/// into a single tall image.
+///
+/// The initial region selection also provides the first frame. `on_selected`
+/// is invoked with the chosen geometry so callers can prompt the user to
+/// start scrolling (e.g. with a desktop notification).
+pub async fn grab_scrolling<F>(config: &Config, on_selected: F) -> Result<CaptureDraft>
+where
+    F: FnOnce(Geometry),
+{
+    let backend = capture::select_backend(&config.capture_backend)?;
+    let scroll = &config.scroll;
+
+    let first = backend
+        .capture(CaptureRequest::Region { geometry: None })
+        .await?;
+    let geometry = first
+        .geometry
+        .ok_or_else(|| Error::msg("could not determine the selected region"))?;
+    on_selected(geometry);
+
+    let mut frames: Vec<DynamicImage> = vec![DynamicImage::ImageRgba8(first.image.clone())];
+    let mut previous = first.image.clone();
+
+    for _ in 1..scroll.max_frames.max(1) {
+        tokio::time::sleep(Duration::from_millis(scroll.frame_delay_ms.max(1) as u64)).await;
+        let next = backend
+            .capture(CaptureRequest::Region {
+                geometry: Some(geometry),
+            })
+            .await?;
+        let frame = DynamicImage::ImageRgba8(next.image.clone());
+        if crate::scroll::frame_similarity(&DynamicImage::ImageRgba8(previous), &frame)
+            >= scroll.similarity_threshold.clamp(0.0, 1.0)
+        {
+            break;
+        }
+        previous = next.image;
+        frames.push(frame);
+    }
+
+    let stitched = crate::scroll::stitch_frames(&frames)?;
+    let image = stitched.to_rgba8();
+    let encoded = encode(&image, config.image_format, config.jpeg_quality)?;
+
+    Ok(CaptureDraft {
+        image,
+        encoded,
+        format: config.image_format,
+        kind: CaptureKind::Scrolling,
+        backend: first.backend,
+        geometry: Some(geometry),
+    })
+}
+
+/// Capture a fixed region (or the full screen) without any interaction.
+///
+/// Used by auto capture and any other repeated grab: when `geometry` is `Some`
+/// the same region is re-captured each time; otherwise the full screen (or the
+/// given monitor) is captured.
+pub async fn grab_locked(
+    config: &Config,
+    geometry: Option<Geometry>,
+    monitor: Option<String>,
+) -> Result<CaptureDraft> {
+    let backend = capture::select_backend(&config.capture_backend)?;
+    let request = match geometry {
+        Some(geometry) => CaptureRequest::Region {
+            geometry: Some(geometry),
+        },
+        None => CaptureRequest::Fullscreen { monitor },
+    };
+
+    let captured = backend.capture(request).await?;
+    let encoded = encode(&captured.image, config.image_format, config.jpeg_quality)?;
+
+    Ok(CaptureDraft {
+        image: captured.image,
+        encoded,
+        format: config.image_format,
+        kind: if geometry.is_some() {
+            CaptureKind::Region
+        } else {
+            CaptureKind::Fullscreen
+        },
         backend: captured.backend,
         geometry: captured.geometry,
     })

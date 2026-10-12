@@ -1,13 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, fileSrc, formatBytes, formatDate } from '../api';
-  import { app, doCapture, toast, uploadFile } from '../state.svelte';
+  import {
+    app,
+    doCapture,
+    doScrollingCapture,
+    refreshAutoCapture,
+    startAutoCapture,
+    stopAutoCapture,
+    toast,
+    uploadFile,
+  } from '../state.svelte';
   import type { CaptureKind, MonitorInfo, WindowInfo } from '../types';
 
   const actions = [
     { kind: 'region' as const, label: 'Region', hint: 'Select an area', icon: '▣' },
     { kind: 'fullscreen' as const, label: 'Fullscreen', hint: 'Entire screen', icon: '⛶' },
     { kind: 'window' as const, label: 'Window', hint: 'Pick a window', icon: '❐' },
+    { kind: 'scrolling' as const, label: 'Scrolling', hint: 'Stitch a long page', icon: '⇕' },
   ];
 
   const delays = [0, 1, 3, 5, 10];
@@ -20,6 +30,34 @@
 
   let delay = $state<number>(app.config?.captureDelaySeconds ?? 0);
   let monitor = $state<string>(app.config?.monitor ?? '');
+
+  // Auto capture controls, seeded from the saved settings.
+  let autoKind = $state<CaptureKind>('region');
+  let autoInterval = $state<number>((app.config?.auto.intervalMs ?? 3000) / 1000);
+  let autoMaxCount = $state<number>(app.config?.auto.maxCount ?? 0);
+  let autoMaxDuration = $state<number>((app.config?.auto.maxDurationSeconds ?? 0) / 60);
+  let autoChange = $state<boolean>(app.config?.auto.changeDetection ?? false);
+
+  // Poll the saved count while an auto-capture session is running. Reading
+  // `app.autoCapture` inside the interval callback does not create a reactive
+  // dependency, so the timer is registered only once.
+  onMount(() => {
+    const id = setInterval(() => {
+      if (app.autoCapture) void refreshAutoCapture();
+    }, 2000);
+    return () => clearInterval(id);
+  });
+
+  function startAuto() {
+    void startAutoCapture(autoKind, {
+      intervalMs: Math.max(200, Math.round(autoInterval * 1000)),
+      changeDetection: autoChange,
+      changeThreshold: app.config?.auto.changeThreshold,
+      maxCount: Math.max(0, Math.round(autoMaxCount)),
+      maxDurationSeconds: Math.max(0, Math.round(autoMaxDuration * 60)),
+      monitor: autoKind === 'fullscreen' && monitor ? monitor : undefined,
+    });
+  }
 
   onMount(async () => {
     try {
@@ -130,10 +168,12 @@
           class="capture-card"
           disabled={app.busy}
           onclick={() =>
-            doCapture(action.kind, {
-              delaySeconds: delay,
-              monitor: monitor || undefined,
-            })}
+            action.kind === 'scrolling'
+              ? doScrollingCapture({ delaySeconds: delay })
+              : doCapture(action.kind, {
+                  delaySeconds: delay,
+                  monitor: monitor || undefined,
+                })}
         >
           <span class="card-icon">{action.icon}</span>
           <span class="card-label">{action.label}</span>
@@ -144,6 +184,54 @@
         </button>
       {/if}
     {/each}
+  </div>
+
+  <div class="auto-panel">
+    <div class="auto-head">
+      <h2>Auto capture</h2>
+      {#if app.autoCapture}
+        <span class="pill live">running · {app.autoCapture.count} saved</span>
+      {:else}
+        <span class="pill">idle</span>
+      {/if}
+    </div>
+    {#if app.autoCapture}
+      <div class="auto-running">
+        <span class="dim">
+          {app.autoCapture.kind} · every {(app.autoCapture.intervalMs / 1000).toFixed(1)}s
+          {#if app.autoCapture.changeDetection}· only on change{/if}
+        </span>
+        <button class="primary" onclick={stopAutoCapture}>Stop</button>
+      </div>
+    {:else}
+      <div class="auto-controls">
+        <label class="opt">
+          <span>Target</span>
+          <select bind:value={autoKind}>
+            <option value="region">Region</option>
+            <option value="fullscreen">Fullscreen</option>
+            <option value="window">Window</option>
+          </select>
+        </label>
+        <label class="opt">
+          <span>Interval (s)</span>
+          <input type="number" min="0.2" step="0.5" bind:value={autoInterval} />
+        </label>
+        <label class="opt">
+          <span>Max captures</span>
+          <input type="number" min="0" step="1" bind:value={autoMaxCount} />
+        </label>
+        <label class="opt">
+          <span>Time limit (min)</span>
+          <input type="number" min="0" step="1" bind:value={autoMaxDuration} />
+        </label>
+        <label class="opt check">
+          <input type="checkbox" bind:checked={autoChange} />
+          <span>Only save on change</span>
+        </label>
+        <button class="primary" onclick={startAuto} disabled={app.busy}>Start</button>
+      </div>
+    {/if}
   </div>
 
   {#if showWindows}
@@ -234,7 +322,7 @@
   }
   .capture-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
@@ -278,6 +366,52 @@
   }
   .card-spinner {
     font-size: 0.75rem;
+    color: var(--accent);
+  }
+  .auto-panel {
+    margin-bottom: 1.5rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+  }
+  .auto-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.7rem;
+  }
+  .auto-head h2 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .auto-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.8rem;
+  }
+  .auto-controls .opt input[type='number'] {
+    width: 6.5rem;
+  }
+  .opt.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+    padding-bottom: 0.35rem;
+  }
+  .auto-running {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .auto-running .dim {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  .pill.live {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
     color: var(--accent);
   }
   .window-picker {

@@ -4,7 +4,7 @@
   import { api } from '../api';
   import { toast } from '../state.svelte';
 
-  type Tool = 'rect' | 'ellipse' | 'arrow' | 'line' | 'pen' | 'text' | 'pixelate' | 'blur' | 'highlight' | 'step' | 'crop';
+  type Tool = 'rect' | 'ellipse' | 'arrow' | 'line' | 'pen' | 'text' | 'highlight' | 'pixelate' | 'blur' | 'step' | 'balloon' | 'magnify' | 'spotlight' | 'cursor' | 'cutout' | 'crop';
 
   const tools: { id: Tool; label: string; icon: string }[] = [
     { id: 'rect', label: 'Rectangle', icon: '▭' },
@@ -17,6 +17,11 @@
     { id: 'pixelate', label: 'Pixelate', icon: '▦' },
     { id: 'blur', label: 'Blur', icon: '◉' },
     { id: 'step', label: 'Step', icon: '①' },
+    { id: 'balloon', label: 'Balloon', icon: '💬' },
+    { id: 'magnify', label: 'Magnify', icon: '🔍' },
+    { id: 'spotlight', label: 'Spotlight', icon: '🔦' },
+    { id: 'cursor', label: 'Cursor', icon: '➤' },
+    { id: 'cutout', label: 'Cut out', icon: '✂' },
     { id: 'crop', label: 'Crop', icon: '⛶' },
   ];
 
@@ -36,6 +41,16 @@
   let dims = $state({ w: 0, h: 0 });
   let filePath = $state('');
   let stepCounter = $state(1);
+  let opacity = $state(100);
+  let shapeFill = $state(false);
+  let lineStyle = $state<'solid' | 'dashed' | 'dotted'>('solid');
+  let arrowStart = $state(false);
+  let arrowEnd = $state(true);
+  let fontFamily = $state('system-ui');
+  let magnifyZoom = $state(2);
+  let balloonText = $state('');
+  let cursorX = $state(0);
+  let cursorY = $state(0);
 
   // Undo/redo snapshots hold the *before* state of every edit.
   let undoStack: ImageData[] = [];
@@ -183,7 +198,15 @@
       case 'blur':
       case 'highlight':
       case 'step':
+      case 'balloon':
+      case 'magnify':
+      case 'spotlight':
+      case 'cutout':
         drawPreview(context, p.x, p.y);
+        commit();
+        break;
+      case 'cursor':
+        placeCursor(context, p.x, p.y);
         commit();
         break;
       case 'text':
@@ -199,6 +222,9 @@
         applyCrop(context, p.x, p.y);
         break;
     }
+
+    // Advance the step counter only once the shape has actually been placed.
+    if (tool === 'step') stepCounter++;
   }
 
   function drawPreview(context: CanvasRenderingContext2D, x: number, y: number) {
@@ -211,25 +237,42 @@
     context.strokeStyle = color;
     context.fillStyle = color;
 
+    context.globalAlpha = opacity / 100;
+    // Reset any dash left over from a previous (line/pen) stroke.
+    context.setLineDash([]);
+
     switch (tool) {
       case 'rect':
         context.beginPath();
         context.rect(x0, y0, w, h);
+        if (shapeFill) {
+          context.fillStyle = color;
+          context.fill();
+        }
         context.stroke();
         break;
       case 'ellipse':
         context.beginPath();
         context.ellipse(x0 + w / 2, y0 + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        if (shapeFill) {
+          context.fillStyle = color;
+          context.fill();
+        }
         context.stroke();
         break;
       case 'arrow':
-        drawArrow(context, startX, startY, x, y);
+        setLineStyle(context);
+        drawArrow(context, startX, startY, x, y, arrowStart, arrowEnd);
         break;
       case 'line':
+        setLineStyle(context);
         context.beginPath();
         context.moveTo(startX, startY);
         context.lineTo(x, y);
         context.stroke();
+        break;
+      case 'pen':
+        context.setLineDash([]);
         break;
       case 'pixelate':
         applyPixelate(context, startX, startY, x, y);
@@ -238,11 +281,8 @@
         applyBlur(context, startX, startY, x, y);
         break;
       case 'highlight':
-        context.save();
-        context.globalAlpha = 0.35;
         context.fillStyle = color;
         context.fillRect(x0, y0, w, h);
-        context.restore();
         break;
       case 'step': {
         const cx = x0 + w / 2;
@@ -253,17 +293,38 @@
         context.fillStyle = color;
         context.fill();
         context.fillStyle = '#ffffff';
-        context.font = `700 ${r}px system-ui, sans-serif`;
+        context.font = `700 ${r}px ${fontFamily}, sans-serif`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(String(stepCounter), cx, cy + 1);
-        stepCounter++;
         break;
       }
+      case 'balloon':
+        drawBalloon(context, x0, y0, w, h, balloonText, color);
+        break;
+      case 'magnify':
+        drawMagnifier(context, x0, y0, w, h, magnifyZoom);
+        break;
+      case 'spotlight':
+        drawSpotlight(context, x0, y0, w, h);
+        break;
+      case 'cutout':
+        applyCutout(context, x0, y0, w, h);
+        break;
       case 'crop':
         drawCropOverlay(context, x0, y0, w, h);
         break;
     }
+
+    context.globalAlpha = 1;
+  }
+
+  function setLineStyle(context: CanvasRenderingContext2D) {
+    context.lineWidth = strokeWidth;
+    context.strokeStyle = color;
+    if (lineStyle === 'dashed') context.setLineDash([strokeWidth * 3, strokeWidth * 2]);
+    else if (lineStyle === 'dotted') context.setLineDash([strokeWidth * 0.5, strokeWidth * 2]);
+    else context.setLineDash([]);
   }
 
   function drawArrow(
@@ -272,6 +333,8 @@
     y0: number,
     x1: number,
     y1: number,
+    start: boolean,
+    end: boolean,
   ) {
     const head = Math.max(10, strokeWidth * 3.5);
     const angle = Math.atan2(y1 - y0, x1 - x0);
@@ -286,18 +349,188 @@
     context.lineTo(x1, y1);
     context.stroke();
 
+    if (end) {
+      context.beginPath();
+      context.moveTo(x1, y1);
+      context.lineTo(
+        x1 - head * Math.cos(angle - Math.PI / 6),
+        y1 - head * Math.sin(angle - Math.PI / 6),
+      );
+      context.lineTo(
+        x1 - head * Math.cos(angle + Math.PI / 6),
+        y1 - head * Math.sin(angle + Math.PI / 6),
+      );
+      context.closePath();
+      context.fill();
+    }
+
+    if (start) {
+      const startAngle = Math.atan2(y0 - y1, x0 - x1);
+      context.beginPath();
+      context.moveTo(x0, y0);
+      context.lineTo(
+        x0 - head * Math.cos(startAngle - Math.PI / 6),
+        y0 - head * Math.sin(startAngle - Math.PI / 6),
+      );
+      context.lineTo(
+        x0 - head * Math.cos(startAngle + Math.PI / 6),
+        y0 - head * Math.sin(startAngle + Math.PI / 6),
+      );
+      context.closePath();
+      context.fill();
+    }
+  }
+
+  function drawBalloon(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    text: string,
+    bgColor: string,
+  ) {
+    const padding = 8;
+    const fontSize = Math.max(12, strokeWidth * 3);
+    context.font = `500 ${fontSize}px ${fontFamily}, sans-serif`;
+    const metrics = context.measureText(text || 'Text');
+    const textW = metrics.width;
+    const textH = fontSize;
+    const bw = textW + padding * 2;
+    const bh = textH + padding * 2;
+    const bx = x + w / 2 - bw / 2;
+    const by = y + h / 2 - bh / 2;
+    const tailH = 16;
+    const tailW = 12;
+
+    context.fillStyle = bgColor;
+    context.strokeStyle = bgColor;
+    context.lineWidth = 2;
+
+    // Balloon body
+    const r = 8;
     context.beginPath();
-    context.moveTo(x1, y1);
-    context.lineTo(
-      x1 - head * Math.cos(angle - Math.PI / 6),
-      y1 - head * Math.sin(angle - Math.PI / 6),
-    );
-    context.lineTo(
-      x1 - head * Math.cos(angle + Math.PI / 6),
-      y1 - head * Math.sin(angle + Math.PI / 6),
-    );
+    context.moveTo(bx + r, by);
+    context.lineTo(bx + bw - r, by);
+    context.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+    context.lineTo(bx + bw, by + bh - r);
+    context.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+    context.lineTo(bx + r, by + bh);
+    context.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+    context.lineTo(bx, by + r);
+    context.quadraticCurveTo(bx, by, bx + r, by);
     context.closePath();
     context.fill();
+
+    // Tail
+    const tailX = bx + bw / 2;
+    const tailY = by + bh;
+    context.beginPath();
+    context.moveTo(tailX - tailW / 2, tailY);
+    context.lineTo(tailX + tailW / 2, tailY);
+    context.lineTo(tailX, tailY + tailH);
+    context.closePath();
+    context.fill();
+
+    // Text
+    context.fillStyle = '#ffffff';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(text || 'Text', bx + bw / 2, by + bh / 2 + 1);
+  }
+
+  function drawMagnifier(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    zoom: number,
+  ) {
+    const c = canvas!;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const r = Math.min(w, h) / 2;
+
+    // Draw magnified content
+    const srcR = r / zoom;
+    context.save();
+    context.beginPath();
+    context.arc(cx, cy, r, 0, Math.PI * 2);
+    context.clip();
+    context.drawImage(c, cx - srcR, cy - srcR, srcR * 2, srcR * 2, cx - r, cy - r, r * 2, r * 2);
+    context.restore();
+
+    // Border
+    context.beginPath();
+    context.arc(cx, cy, r, 0, Math.PI * 2);
+    context.strokeStyle = color;
+    context.lineWidth = strokeWidth;
+    context.stroke();
+
+    // Handle
+    const handleLen = r * 0.8;
+    const handleAngle = Math.PI / 4;
+    const hx = cx + r * Math.cos(handleAngle);
+    const hy = cy + r * Math.sin(handleAngle);
+    context.beginPath();
+    context.moveTo(hx, hy);
+    context.lineTo(hx + handleLen * Math.cos(handleAngle), hy + handleLen * Math.sin(handleAngle));
+    context.stroke();
+  }
+
+  function drawSpotlight(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
+    const c = canvas!;
+    context.save();
+    context.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    context.beginPath();
+    context.rect(0, 0, c.width, c.height);
+    context.rect(x, y, w, h);
+    context.fill('evenodd');
+    context.restore();
+
+    // Border around spotlight
+    context.strokeStyle = color;
+    context.lineWidth = Math.max(2, strokeWidth);
+    context.strokeRect(x, y, w, h);
+  }
+
+  function applyCutout(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
+    context.save();
+    context.clearRect(x, y, w, h);
+    context.restore();
+  }
+
+  function placeCursor(context: CanvasRenderingContext2D, x: number, y: number) {
+    const size = Math.max(16, strokeWidth * 4);
+    context.fillStyle = '#ffffff';
+    context.strokeStyle = '#000000';
+    context.lineWidth = 2;
+
+    context.beginPath();
+    context.moveTo(x, y);
+    context.lineTo(x, y + size);
+    context.lineTo(x + size * 0.3, y + size * 0.75);
+    context.lineTo(x + size * 0.5, y + size * 0.9);
+    context.lineTo(x + size * 0.65, y + size * 0.7);
+    context.lineTo(x + size * 0.9, y + size * 0.7);
+    context.lineTo(x + size * 0.75, y + size * 0.5);
+    context.lineTo(x + size, y + size * 0.3);
+    context.closePath();
+    context.fill();
+    context.stroke();
   }
 
   function drawText(context: CanvasRenderingContext2D, x: number, y: number) {
@@ -345,6 +578,7 @@
     sctx.drawImage(canvas!, x, y, w, h, 0, 0, small.width, small.height);
 
     context.save();
+    context.globalAlpha = 1;
     context.imageSmoothingEnabled = false;
     context.drawImage(small, 0, 0, small.width, small.height, x, y, w, h);
     context.restore();
@@ -369,6 +603,7 @@
     tctx.drawImage(canvas!, x, y, w, h, 0, 0, w, h);
 
     context.save();
+    context.globalAlpha = 1;
     context.clearRect(x, y, w, h);
     context.drawImage(temp, x, y);
     context.restore();
@@ -615,11 +850,87 @@
         </div>
       {/if}
 
+      {#if tool === 'balloon'}
+        <div class="options-section">
+          <span class="section-label">Balloon Text</span>
+          <input type="text" bind:value={balloonText} placeholder="Enter balloon text…" />
+          <p class="hint">Draw a speech balloon on the image</p>
+        </div>
+      {/if}
+
+      {#if tool === 'magnify'}
+        <div class="options-section">
+          <span class="section-label">Zoom — {magnifyZoom}x</span>
+          <input type="range" min="1.5" max="5" step="0.5" bind:value={magnifyZoom} />
+          <p class="hint">Magnification level</p>
+        </div>
+      {/if}
+
       {#if tool === 'blur' || tool === 'pixelate'}
         <div class="options-section">
           <span class="section-label">Intensity</span>
           <input type="range" min="1" max="24" bind:value={strokeWidth} />
           <p class="hint">Adjust the {tool === 'blur' ? 'blur radius' : 'pixel size'}</p>
+        </div>
+      {/if}
+
+      {#if tool === 'rect' || tool === 'ellipse' || tool === 'highlight'}
+        <div class="options-section">
+          <span class="section-label">Fill</span>
+          <label class="toggle-row">
+            <input type="checkbox" bind:checked={shapeFill} />
+            <span>Fill shape with color</span>
+          </label>
+        </div>
+      {/if}
+
+      {#if tool === 'line' || tool === 'arrow' || tool === 'pen'}
+        <div class="options-section">
+          <span class="section-label">Line Style</span>
+          <div class="line-styles">
+            <button class="line-btn" class:active={lineStyle === 'solid'} onclick={() => lineStyle = 'solid'} title="Solid">
+              <svg width="24" height="8" viewBox="0 0 24 8"><line x1="1" y1="4" x2="23" y2="4" stroke="currentColor" stroke-width="2"/></svg>
+            </button>
+            <button class="line-btn" class:active={lineStyle === 'dashed'} onclick={() => lineStyle = 'dashed'} title="Dashed">
+              <svg width="24" height="8" viewBox="0 0 24 8"><line x1="1" y1="4" x2="23" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>
+            </button>
+            <button class="line-btn" class:active={lineStyle === 'dotted'} onclick={() => lineStyle = 'dotted'} title="Dotted">
+              <svg width="24" height="8" viewBox="0 0 24 8"><line x1="1" y1="4" x2="23" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="0.5 3"/></svg>
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      {#if tool === 'arrow'}
+        <div class="options-section">
+          <span class="section-label">Arrowheads</span>
+          <label class="toggle-row">
+            <input type="checkbox" bind:checked={arrowStart} />
+            <span>Start</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" bind:checked={arrowEnd} />
+            <span>End</span>
+          </label>
+        </div>
+      {/if}
+
+      {#if tool === 'text' || tool === 'balloon' || tool === 'step'}
+        <div class="options-section">
+          <span class="section-label">Font</span>
+          <select bind:value={fontFamily}>
+            <option value="system-ui">System UI</option>
+            <option value="serif">Serif</option>
+            <option value="monospace">Monospace</option>
+            <option value="cursive">Cursive</option>
+          </select>
+        </div>
+      {/if}
+
+      {#if tool !== 'crop' && tool !== 'cursor'}
+        <div class="options-section">
+          <span class="section-label">Opacity — {opacity}%</span>
+          <input type="range" min="10" max="100" bind:value={opacity} />
         </div>
       {/if}
 
@@ -880,6 +1191,53 @@
     margin: 0;
     font-size: 0.68rem;
     color: var(--text-dim);
+  }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .toggle-row input[type='checkbox'] {
+    accent-color: var(--accent);
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+  .line-styles {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .line-btn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 24px;
+    padding: 0;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .line-btn:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .line-btn.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .options-section select {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+    color: var(--text);
+    font-size: 0.78rem;
   }
   .shortcuts {
     margin-top: auto;

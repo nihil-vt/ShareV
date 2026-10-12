@@ -13,7 +13,7 @@
   import Toasts from './lib/components/Toasts.svelte';
   import { api } from './lib/api';
   import { app, init, reloadHistory, toast } from './lib/state.svelte';
-  import type { CaptureResult, RecordingInfo, RecordingResult } from './lib/types';
+  import type { AutoCaptureInfo, CaptureResult, RecordingInfo, RecordingResult } from './lib/types';
 
   // Pin and editor windows are separate webviews created by the backend;
   // they render their own UI instead of the full app.
@@ -34,7 +34,10 @@
       app.last = event.payload;
       app.lastUpload = null;
       reloadHistory();
-      toast(`Saved ${event.payload.fileName}`, 'success');
+      // Auto capture can save many frames; don't toast for every one.
+      if (!app.autoCapture) {
+        toast(`Saved ${event.payload.fileName}`, 'success');
+      }
     });
 
     // Recording lifecycle events (also emitted when driven from the tray).
@@ -59,11 +62,22 @@
       }
     });
 
+    // Auto-capture lifecycle events (also emitted when driven from the CLI).
+    const unlistenAutoStart = listen<AutoCaptureInfo>('auto-capture-started', (event) => {
+      app.autoCapture = event.payload;
+    });
+    const unlistenAutoStop = listen<AutoCaptureInfo>('auto-capture-stopped', (event) => {
+      app.autoCapture = null;
+      toast(`Auto capture stopped after ${event.payload.count} capture(s)`, 'info');
+    });
+
     return () => {
       unlisten.then((fn) => fn());
       unlistenStart.then((fn) => fn());
       unlistenStop.then((fn) => fn());
       unlistenEditor.then((fn) => fn());
+      unlistenAutoStart.then((fn) => fn());
+      unlistenAutoStop.then((fn) => fn());
     };
   });
 </script>
@@ -72,6 +86,7 @@
   <PinView />
 {:else if editorWindow}
   <EditorWindow />
+  <Toasts />
 {:else}
   <div class="app">
     <Sidebar />

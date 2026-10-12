@@ -15,9 +15,21 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let has_last = !crate::history::list(Some(1)).unwrap_or_default().is_empty();
 
     let region = MenuItem::with_id(app, "capture_region", "Capture Region", true, None::<&str>)?;
-    let fullscreen =
-        MenuItem::with_id(app, "capture_fullscreen", "Capture Fullscreen", true, None::<&str>)?;
+    let fullscreen = MenuItem::with_id(
+        app,
+        "capture_fullscreen",
+        "Capture Fullscreen",
+        true,
+        None::<&str>,
+    )?;
     let window = MenuItem::with_id(app, "capture_window", "Capture Window", true, None::<&str>)?;
+    let scrolling = MenuItem::with_id(
+        app,
+        "capture_scrolling",
+        "Capture Scrolling",
+        true,
+        None::<&str>,
+    )?;
     let toggle_label = if recording {
         "Stop Recording"
     } else {
@@ -38,7 +50,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         has_last && !recording,
         None::<&str>,
     )?;
-    let open_folder = MenuItem::with_id(app, "open_folder", "Open Save Folder", true, None::<&str>)?;
+    let open_folder =
+        MenuItem::with_id(app, "open_folder", "Open Save Folder", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show ShareV", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let sep_a = PredefinedMenuItem::separator(app)?;
@@ -51,6 +64,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &region,
             &fullscreen,
             &window,
+            &scrolling,
             &sep_a,
             &record,
             &sep_b,
@@ -112,6 +126,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
         "capture_region" => spawn_capture(app, CaptureKind::Region),
         "capture_fullscreen" => spawn_capture(app, CaptureKind::Fullscreen),
         "capture_window" => spawn_capture(app, CaptureKind::Window),
+        "capture_scrolling" => spawn_capture(app, CaptureKind::Scrolling),
         "toggle_recording" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {

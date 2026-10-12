@@ -10,7 +10,8 @@ use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
-use crate::config::{build_filename, unique_path, Config, Task};
+use crate::commands::notify_error;
+use crate::config::{Config, Task, build_filename, unique_path};
 use crate::error::Result;
 use crate::pipeline::{CaptureDraft, CaptureResult};
 use crate::{clipboard, history, upload};
@@ -23,9 +24,10 @@ pub async fn run(
 ) -> Result<CaptureResult> {
     let id = crate::id::new_id();
     let created_at = chrono::Local::now().to_rfc3339();
-    let width = draft.image.width();
-    let height = draft.image.height();
+    let mut width = draft.image.width();
+    let mut height = draft.image.height();
     let format = draft.format;
+    let mut byte_count = draft.encoded.len() as u64;
 
     let mut path: Option<std::path::PathBuf> = None;
     let mut file_name = String::new();
@@ -44,7 +46,32 @@ pub async fn run(
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or(name);
-                path = Some(target);
+                path = Some(target.clone());
+
+                // Apply image effects after saving if any are configured. Re-encode
+                // through the pipeline so the output format (and JPEG flattening)
+                // stays consistent, then refresh the recorded dimensions/bytes.
+                if !config.effects.effects.is_empty() {
+                    match image::open(&target) {
+                        Ok(img) => {
+                            let effected = crate::effects::apply_effects(&img, &config.effects);
+                            match crate::pipeline::encode(
+                                &effected.to_rgba8(),
+                                format,
+                                config.jpeg_quality,
+                            ) {
+                                Ok(bytes) => {
+                                    std::fs::write(&target, &bytes)?;
+                                    width = effected.width();
+                                    height = effected.height();
+                                    byte_count = bytes.len() as u64;
+                                }
+                                Err(err) => log::warn!("could not encode image effects: {err}"),
+                            }
+                        }
+                        Err(err) => log::warn!("could not apply image effects: {err}"),
+                    }
+                }
             }
 
             Task::History => {
@@ -56,7 +83,7 @@ pub async fn run(
                         kind: draft.kind.as_str().to_string(),
                         width,
                         height,
-                        bytes: draft.encoded.len() as u64,
+                        bytes: byte_count,
                         backend: draft.backend.clone(),
                         created_at: created_at.clone(),
                         url: None,
@@ -78,7 +105,10 @@ pub async fn run(
 
             Task::Editor => {
                 if let (Some(app), Some(target)) = (app, &path)
-                    && let Err(err) = crate::commands::open_editor(app.clone(), target.to_string_lossy().into_owned())
+                    && let Err(err) = crate::commands::open_editor(
+                        app.clone(),
+                        target.to_string_lossy().into_owned(),
+                    )
                 {
                     log::warn!("could not open editor: {err}");
                 }
@@ -100,7 +130,8 @@ pub async fn run(
                             if clipboard::copy_text(&link).is_err() {
                                 log::warn!("could not copy the upload link to the clipboard");
                             }
-                            if let Some(mut entry) = history::find_by_path(&target.to_string_lossy())
+                            if let Some(mut entry) =
+                                history::find_by_path(&target.to_string_lossy())
                             {
                                 entry.url = Some(remote.clone());
                                 if let Err(err) = history::replace(entry) {
@@ -116,8 +147,13 @@ pub async fn run(
 
             Task::Pin => {
                 if let (Some(app), Some(target)) = (app, &path)
-                    && let Err(err) =
-                        crate::pin::pin(app, &target.to_string_lossy(), width, height, draft.geometry)
+                    && let Err(err) = crate::pin::pin(
+                        app,
+                        &target.to_string_lossy(),
+                        width,
+                        height,
+                        draft.geometry,
+                    )
                 {
                     log::warn!("could not pin capture: {err}");
                 }
@@ -135,8 +171,28 @@ pub async fn run(
                 notify(app, &file_name, width, height, url.as_deref());
             }
 
-            // Only meaningful after an upload; ignore here.
             Task::CopyLink => {}
+
+            Task::Ocr => {
+                if let Some(target) = &path {
+                    let lang = config.ocr_language.clone();
+                    match crate::ocr::recognize(&target.to_string_lossy(), &lang).await {
+                        Ok(text) => {
+                            if !text.is_empty()
+                                && let Err(err) = crate::clipboard::copy_text(&text)
+                            {
+                                log::warn!("could not copy OCR text to clipboard: {err}");
+                            }
+                        }
+                        Err(err) => {
+                            log::warn!("OCR failed: {err}");
+                            if let Some(app) = app {
+                                notify_error(app, &format!("OCR failed: {err}"));
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -149,7 +205,7 @@ pub async fn run(
         kind: draft.kind.as_str().to_string(),
         width,
         height,
-        bytes: draft.encoded.len() as u64,
+        bytes: byte_count,
         backend: draft.backend,
         created_at,
         copied,
@@ -232,13 +288,7 @@ async fn run_command(config: &Config, path: &Path) -> Result<()> {
 }
 
 /// Show a desktop notification, preferring the in-app plugin.
-fn notify(
-    app: Option<&AppHandle>,
-    file_name: &str,
-    width: u32,
-    height: u32,
-    url: Option<&str>,
-) {
+fn notify(app: Option<&AppHandle>, file_name: &str, width: u32, height: u32, url: Option<&str>) {
     let file_name = if file_name.is_empty() {
         "capture"
     } else {

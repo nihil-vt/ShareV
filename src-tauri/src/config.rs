@@ -28,6 +28,21 @@ impl ImageFormat {
             ImageFormat::Webp => "image/webp",
         }
     }
+
+    /// Infer the format from a file extension, if it is one we can write.
+    pub fn from_path(path: &Path) -> Option<Self> {
+        match path
+            .extension()?
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "png" => Some(ImageFormat::Png),
+            "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
+            "webp" => Some(ImageFormat::Webp),
+            _ => None,
+        }
+    }
 }
 
 /// A single post-capture / post-upload action. Stored in the config as a
@@ -46,6 +61,8 @@ pub enum Task {
     Notify,
     /// Copy the freshly obtained link to the clipboard (post-upload).
     CopyLink,
+    /// Run OCR on the capture and copy the recognized text to the clipboard.
+    Ocr,
 }
 
 impl Task {
@@ -61,6 +78,7 @@ impl Task {
             Task::Command => "command",
             Task::Notify => "notify",
             Task::CopyLink => "copyLink",
+            Task::Ocr => "ocr",
         }
     }
 
@@ -77,6 +95,7 @@ impl Task {
             "command" | "action" => Some(Task::Command),
             "notify" | "notification" => Some(Task::Notify),
             "copylink" => Some(Task::CopyLink),
+            "ocr" | "text" => Some(Task::Ocr),
             _ => None,
         }
     }
@@ -313,8 +332,6 @@ impl RecordFormat {
     }
 }
 
-
-
 /// Which audio sources a recording captures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -344,8 +361,6 @@ impl AudioMode {
         matches!(self, AudioMode::Microphone | AudioMode::Both)
     }
 }
-
-
 
 /// Screen recording configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,7 +392,6 @@ impl Default for RecordConfig {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -418,6 +432,14 @@ pub struct Config {
     /// Ordered tasks run after a successful upload.
     #[serde(default)]
     pub after_upload: AfterUploadConfig,
+    /// OCR language (Tesseract language code, e.g. "eng").
+    pub ocr_language: String,
+    /// Image effects pipeline.
+    pub effects: crate::effects::EffectsConfig,
+    /// Scrolling capture settings.
+    pub scroll: crate::scroll::ScrollConfig,
+    /// Timed / change-detection auto capture.
+    pub auto: crate::auto::AutoCaptureConfig,
 }
 
 impl Default for Config {
@@ -444,6 +466,10 @@ impl Default for Config {
             after_upload: AfterUploadConfig {
                 tasks: Some(default_upload_tasks()),
             },
+            ocr_language: "eng".into(),
+            effects: crate::effects::EffectsConfig::default(),
+            scroll: crate::scroll::ScrollConfig::default(),
+            auto: crate::auto::AutoCaptureConfig::default(),
         }
     }
 }
@@ -633,7 +659,10 @@ mod tests {
     fn formats_links_for_each_copy_format() {
         let url = "https://example.com/a.png";
         assert_eq!(CopyFormat::Url.format(url), url);
-        assert_eq!(CopyFormat::Markdown.format(url), "![](<https://example.com/a.png>)");
+        assert_eq!(
+            CopyFormat::Markdown.format(url),
+            "![](<https://example.com/a.png>)"
+        );
         assert_eq!(
             CopyFormat::Html.format(url),
             "<img src=\"https://example.com/a.png\" />"
@@ -662,10 +691,7 @@ mod tests {
         cfg.normalize();
 
         let tasks = cfg.after_capture_tasks();
-        assert_eq!(
-            tasks,
-            vec![Task::Save, Task::History, Task::CopyImage]
-        );
+        assert_eq!(tasks, vec![Task::Save, Task::History, Task::CopyImage]);
     }
 
     #[test]

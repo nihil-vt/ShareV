@@ -84,7 +84,9 @@ async fn upload_imgur(config: &Config, path: &Path) -> Result<String> {
             .pointer("/data/error")
             .and_then(|v| v.as_str())
             .unwrap_or(&body);
-        return Err(Error::msg(format!("Imgur upload failed ({status}): {message}")));
+        return Err(Error::msg(format!(
+            "Imgur upload failed ({status}): {message}"
+        )));
     }
 
     value
@@ -124,7 +126,10 @@ async fn upload_http(config: &Config, path: &Path) -> Result<String> {
         .map_err(|e| Error::Http(e.to_string()))?;
 
     if !status.is_success() {
-        return Err(Error::msg(format!("upload failed ({status}): {}", body.trim())));
+        return Err(Error::msg(format!(
+            "upload failed ({status}): {}",
+            body.trim()
+        )));
     }
 
     extract_url(&body, &config.upload.http_response_path)

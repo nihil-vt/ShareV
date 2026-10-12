@@ -1,6 +1,7 @@
-import { api, type CaptureOptions } from './api';
+import { api, type AutoCaptureOptions, type CaptureOptions } from './api';
 import type {
   AudioDevice,
+  AutoCaptureInfo,
   CaptureKind,
   CaptureResult,
   Config,
@@ -39,6 +40,8 @@ export const app = $state({
   recordingStartedAt: null as number | null,
   lastRecording: null as RecordingResult | null,
   audioDevices: [] as AudioDevice[],
+  // Auto capture
+  autoCapture: null as AutoCaptureInfo | null,
 });
 
 export function toast(text: string, kind: Toast['kind'] = 'info') {
@@ -55,6 +58,7 @@ export async function init() {
     app.history = await api.listHistory();
     app.ready = true;
     refreshRecordingStatus();
+    refreshAutoCapture();
   } catch (err) {
     toast(`Failed to start: ${err}`, 'error');
     app.ready = true;
@@ -99,28 +103,38 @@ export async function doCapture(kind: CaptureKind, options: CaptureOptions = {})
   app.busy = true;
   app.busyKind = kind;
   try {
-    const result = await api.capture(kind, options);
-    app.last = result;
-    app.lastUpload = null;
-    await reloadHistory();
-    toast(`Saved ${result.fileName}`, 'success');
-    if (result.openEditor && result.path) {
-      try {
-        await api.openEditor(result.path);
-      } catch (err) {
-        toast(`Could not open editor: ${err}`, 'error');
-      }
-    }
+    // The backend emits `capture-completed`, which the app-level listener turns
+    // into the "Last capture" update and a toast — don't also handle it here.
+    await api.capture(kind, options);
   } catch (err) {
-    const message = String(err);
-    if (message.toLowerCase().includes('cancel')) {
-      toast('Capture cancelled', 'info');
-    } else {
-      toast(`Capture failed: ${message}`, 'error');
-    }
+    reportCaptureError(err);
   } finally {
     app.busy = false;
     app.busyKind = null;
+  }
+}
+
+/** Capture a scrolling region and stitch it into one tall image. */
+export async function doScrollingCapture(options: CaptureOptions = {}) {
+  if (app.busy) return;
+  app.busy = true;
+  app.busyKind = 'scrolling';
+  try {
+    await api.captureScrolling(options.delaySeconds);
+  } catch (err) {
+    reportCaptureError(err);
+  } finally {
+    app.busy = false;
+    app.busyKind = null;
+  }
+}
+
+function reportCaptureError(err: unknown) {
+  const message = String(err);
+  if (message.toLowerCase().includes('cancel')) {
+    toast('Capture cancelled', 'info');
+  } else {
+    toast(`Capture failed: ${message}`, 'error');
   }
 }
 
@@ -193,6 +207,51 @@ export async function loadAudioDevices() {
     app.audioDevices = await api.listAudioDevices();
   } catch {
     app.audioDevices = [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auto capture
+// ---------------------------------------------------------------------------
+
+/** Sync the active auto-capture session with the backend. */
+export async function refreshAutoCapture() {
+  try {
+    app.autoCapture = await api.autoCaptureStatus();
+  } catch {
+    // The backend may not be ready yet; ignore.
+  }
+}
+
+/** Start a timed auto-capture session over a region, the screen or a window. */
+export async function startAutoCapture(
+  kind: CaptureKind,
+  options: AutoCaptureOptions = {},
+) {
+  if (app.autoCapture) return;
+  try {
+    app.autoCapture = await api.startAutoCapture(kind, options);
+    toast(`Auto capture started (${kind})`, 'success');
+  } catch (err) {
+    const message = String(err);
+    if (message.toLowerCase().includes('cancel')) {
+      toast('Auto capture cancelled', 'info');
+    } else {
+      toast(`Could not start auto capture: ${message}`, 'error');
+    }
+  }
+}
+
+/** Ask the active auto-capture session to stop. */
+export async function stopAutoCapture() {
+  if (!app.autoCapture) return;
+  try {
+    await api.stopAutoCapture();
+    // The loop clears the state and emits "auto-capture-stopped"; refresh too
+    // in case this was called from a component that misses the event.
+    await refreshAutoCapture();
+  } catch (err) {
+    toast(`Could not stop auto capture: ${err}`, 'error');
   }
 }
 

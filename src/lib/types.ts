@@ -1,5 +1,5 @@
 export type ImageFormat = 'png' | 'jpeg' | 'webp';
-export type CaptureKind = 'region' | 'fullscreen' | 'window';
+export type CaptureKind = 'region' | 'fullscreen' | 'window' | 'scrolling';
 export type UploaderKind = 'none' | 'imgur' | 'http' | 'command';
 export type CopyFormat = 'url' | 'markdown' | 'html';
 export type RecordFormat = 'mp4' | 'webm' | 'gif';
@@ -17,7 +17,8 @@ export type CaptureTask =
   | 'pin'
   | 'command'
   | 'notify'
-  | 'copyLink';
+  | 'copyLink'
+  | 'ocr';
 
 export interface Geometry {
   x: number;
@@ -70,6 +71,83 @@ export interface RecordConfig {
   microphoneDevice: string;
 }
 
+export interface ScrollConfig {
+  maxFrames: number;
+  frameDelayMs: number;
+  similarityThreshold: number;
+}
+
+export interface AutoCaptureConfig {
+  intervalMs: number;
+  changeDetection: boolean;
+  changeThreshold: number;
+  maxCount: number;
+  maxDurationSeconds: number;
+}
+
+export interface AutoCaptureInfo {
+  kind: string;
+  intervalMs: number;
+  changeDetection: boolean;
+  startedAt: string;
+  count: number;
+  maxCount: number;
+  maxDurationSeconds: number;
+}
+
+export type EffectKind =
+  | 'none'
+  | 'shadow'
+  | 'border'
+  | 'watermark'
+  | 'canvasResize'
+  | 'blur'
+  | 'roundedCorners';
+
+export interface ShadowParams {
+  offsetX: number;
+  offsetY: number;
+  blurRadius: number;
+  color: string;
+  opacity: number;
+}
+
+export interface BorderParams {
+  width: number;
+  color: string;
+}
+
+export interface WatermarkParams {
+  text: string;
+  fontSize: number;
+  color: string;
+  opacity: number;
+  position: string;
+}
+
+export interface CanvasResizeParams {
+  padding: number;
+  color: string;
+}
+
+export interface BlurParams {
+  radius: number;
+}
+
+export interface RoundedCornersParams {
+  radius: number;
+}
+
+export interface EffectsConfig {
+  effects: EffectKind[];
+  shadow: ShadowParams;
+  border: BorderParams;
+  watermark: WatermarkParams;
+  canvasResize: CanvasResizeParams;
+  blur: BlurParams;
+  roundedCorners: RoundedCornersParams;
+}
+
 export interface Config {
   saveDirectory: string;
   imageFormat: ImageFormat;
@@ -87,6 +165,11 @@ export interface Config {
   record: RecordConfig;
   afterCapture: AfterCaptureConfig;
   afterUpload: AfterUploadConfig;
+  /** Tesseract language code used by the `ocr` task (e.g. "eng"). */
+  ocrLanguage: string;
+  scroll: ScrollConfig;
+  effects: EffectsConfig;
+  auto: AutoCaptureConfig;
 }
 
 export interface HistoryEntry {

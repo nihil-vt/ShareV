@@ -11,6 +11,8 @@ pub enum CaptureKind {
     Region,
     Fullscreen,
     Window,
+    /// Stitch a taller image by capturing a region repeatedly while it scrolls.
+    Scrolling,
 }
 
 impl CaptureKind {
@@ -19,6 +21,7 @@ impl CaptureKind {
             CaptureKind::Region => "region",
             CaptureKind::Fullscreen => "fullscreen",
             CaptureKind::Window => "window",
+            CaptureKind::Scrolling => "scrolling",
         }
     }
 
@@ -27,6 +30,7 @@ impl CaptureKind {
             "region" | "area" | "selection" => Ok(CaptureKind::Region),
             "fullscreen" | "screen" | "full" | "monitor" => Ok(CaptureKind::Fullscreen),
             "window" | "active-window" | "activewindow" => Ok(CaptureKind::Window),
+            "scrolling" | "scroll" | "long" => Ok(CaptureKind::Scrolling),
             other => Err(Error::msg(format!("unknown capture kind '{other}'"))),
         }
     }
@@ -155,6 +159,10 @@ mod tests {
         assert_eq!(
             CaptureKind::parse("active-window").unwrap(),
             CaptureKind::Window
+        );
+        assert_eq!(
+            CaptureKind::parse("scroll").unwrap(),
+            CaptureKind::Scrolling
         );
         assert!(CaptureKind::parse("nope").is_err());
     }

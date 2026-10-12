@@ -21,7 +21,7 @@ use tokio::process::Command;
 use crate::capture::{self, CaptureKind, Geometry};
 use crate::config::{AudioMode, Config, RecordFormat};
 use crate::error::{Error, Result};
-use crate::platform::display::{detect, DisplayServer};
+use crate::platform::display::{DisplayServer, detect};
 
 /// Backend id reported to the frontend.
 pub const BACKEND_WF_RECORDER: &str = "wf-recorder";
@@ -119,7 +119,7 @@ pub async fn resolve_geometry(
                 Ok(Some(x11_screen_geometry().await?))
             }
         }
-        CaptureKind::Region => {
+        CaptureKind::Region | CaptureKind::Scrolling => {
             if backend == BACKEND_WF_RECORDER {
                 Ok(Some(crate::capture::wlroots::select_region().await?))
             } else {
@@ -184,14 +184,16 @@ pub fn build_request(
     }
 }
 
-/// Audio devices to feed to the encoder, based on the configured mode.
-fn audio_devices(request: &RecordRequest) -> Vec<String> {
+/// Audio inputs to feed to the encoder, tagged with whether each is system
+/// audio so the right "default device" can be chosen when none is configured.
+/// The first element is `true` for system audio (a sink monitor).
+fn audio_devices(request: &RecordRequest) -> Vec<(bool, String)> {
     let mut devices = Vec::new();
     if request.audio.captures_system() {
-        devices.push(request.system_device.trim().to_string());
+        devices.push((true, request.system_device.trim().to_string()));
     }
     if request.audio.captures_microphone() {
-        devices.push(request.microphone_device.trim().to_string());
+        devices.push((false, request.microphone_device.trim().to_string()));
     }
     devices
 }
@@ -250,10 +252,15 @@ fn wf_recorder_command(request: &RecordRequest) -> StdCommand {
     if let Some(geometry) = request.geometry {
         command.arg("-g").arg(geometry.to_grim());
     }
-    for device in audio_devices(request) {
+    for (system, device) in audio_devices(request) {
         if device.is_empty() {
-            // Record the default sink monitor.
-            command.arg("-a");
+            if system {
+                // Bare `-a` records the default sink's monitor.
+                command.arg("-a");
+            } else {
+                // The default input source is the microphone.
+                command.arg("-a@DEFAULT_SOURCE@");
+            }
         } else {
             command.arg(format!("-a{device}"));
         }
@@ -282,9 +289,9 @@ fn ffmpeg_command(request: &RecordRequest) -> Result<StdCommand> {
         .arg(format!("{display}+{},{}", geometry.x, geometry.y));
 
     let devices = audio_devices(request);
-    for device in &devices {
+    for (system, device) in &devices {
         command.arg("-f").arg("pulse");
-        command.arg("-i").arg(device_or_default(device));
+        command.arg("-i").arg(device_or_default(*system, device));
     }
 
     match request.format {
@@ -301,7 +308,10 @@ fn ffmpeg_command(request: &RecordRequest) -> Result<StdCommand> {
     match devices.len() {
         0 => {}
         1 => {
-            command.args(["-c:a", "aac"]).args(["-map", "0:v"]).args(["-map", "1:a"]);
+            command
+                .args(["-c:a", "aac"])
+                .args(["-map", "0:v"])
+                .args(["-map", "1:a"]);
         }
         _ => {
             command
@@ -317,11 +327,16 @@ fn ffmpeg_command(request: &RecordRequest) -> Result<StdCommand> {
     Ok(command)
 }
 
-fn device_or_default(device: &str) -> String {
-    if device.is_empty() {
-        "@DEFAULT_SOURCE@".into()
+fn device_or_default(system: bool, device: &str) -> String {
+    if !device.is_empty() {
+        return device.to_string();
+    }
+    // PulseAudio special names: the default sink's monitor for system audio,
+    // and the default source (microphone) otherwise.
+    if system {
+        "@DEFAULT_MONITOR@".into()
     } else {
-        device.to_string()
+        "@DEFAULT_SOURCE@".into()
     }
 }
 
@@ -486,7 +501,11 @@ async fn sway_focused_output() -> Option<Geometry> {
 /// a single output is enabled, using its current mode.
 async fn wlr_randr_single_output() -> Option<Geometry> {
     capture::which("wlr-randr")?;
-    let output = Command::new("wlr-randr").arg("--json").output().await.ok()?;
+    let output = Command::new("wlr-randr")
+        .arg("--json")
+        .output()
+        .await
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -680,7 +699,10 @@ mod tests {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         assert!(args.windows(2).any(|w| w[0] == "-f" && w[1] == "x11grab"));
-        assert!(args.windows(2).any(|w| w[0] == "-video_size" && w[1] == "300x200"));
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-video_size" && w[1] == "300x200")
+        );
         // two pulse inputs and an amix filter
         assert_eq!(args.iter().filter(|a| *a == "pulse").count(), 2);
         assert!(args.iter().any(|a| a.contains("amix")));
