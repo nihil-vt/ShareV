@@ -97,6 +97,15 @@ export const api = {
   ocrStatus: () => invoke<{ available: boolean; languages: string[] }>('ocr_status'),
   ocrRecognize: (path: string, language: string) =>
     invoke<string>('ocr_recognize', { path, language }),
+  featureStatus: (feature: string) =>
+    invoke<{
+      id: string;
+      label: string;
+      binary: string;
+      enabled: boolean;
+      available: boolean;
+      installCommand: string | null;
+    }>('feature_status', { feature }),
 
   uploadPath: (path: string) => invoke<UploadOutcome>('upload_path', { path }),
   uploadLast: () => invoke<UploadOutcome | null>('upload_last'),

@@ -66,8 +66,13 @@ Runtime tools (at least one capture backend must be present):
 
 Clipboard: `wl-clipboard` (`wl-copy`) on Wayland or `xclip` on X11.
 
-OCR needs `tesseract` (plus any extra language packs you want, e.g.
-`tesseract-data-fra`).
+**Optional features are toggleable in the config (`[features]`) and never
+require their dependency to be installed while disabled** — enabling a feature
+whose binary is missing shows the install command for your distribution (apt /
+dnf / pacman / zypper / apk / xbps) in Settings and in the CLI output.
+
+- OCR (feature `ocr`, default on, needs `tesseract` plus any extra language
+  packs you want, e.g. `tesseract-data-fra`).
 
 Window and monitor enumeration needs `hyprctl` (Hyprland), `swaymsg` (Sway), or
 `wmctrl` + `xrandr` (X11).

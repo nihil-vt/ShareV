@@ -148,6 +148,11 @@ export interface EffectsConfig {
   roundedCorners: RoundedCornersParams;
 }
 
+export interface FeatureFlags {
+  /** OCR via Tesseract. Off means Tesseract never needs to be installed. */
+  ocr: boolean;
+}
+
 export interface Config {
   saveDirectory: string;
   imageFormat: ImageFormat;
@@ -167,6 +172,8 @@ export interface Config {
   afterUpload: AfterUploadConfig;
   /** Tesseract language code used by the `ocr` task (e.g. "eng"). */
   ocrLanguage: string;
+  /** Toggleable features with optional system dependencies. */
+  features: FeatureFlags;
   scroll: ScrollConfig;
   effects: EffectsConfig;
   auto: AutoCaptureConfig;

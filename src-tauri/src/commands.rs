@@ -578,6 +578,31 @@ pub fn copy_edits(data: String) -> Result<()> {
 // OCR
 // ---------------------------------------------------------------------------
 
+/// Status of an optional feature: whether it's enabled in the config, whether
+/// its system dependency is installed, and the install command for this
+/// distribution when it isn't.
+#[tauri::command]
+pub fn feature_status(
+    state: State<'_, AppState>,
+    feature: String,
+) -> Result<serde_json::Value> {
+    let config = state.config.lock().unwrap().clone();
+    let Some(feature) = crate::deps::Feature::parse(&feature) else {
+        return Err(Error::msg(format!("unknown feature: {feature}")));
+    };
+    let enabled = match feature {
+        crate::deps::Feature::Ocr => config.features.ocr,
+    };
+    Ok(serde_json::json!({
+        "id": feature.id(),
+        "label": feature.label(),
+        "binary": feature.binary(),
+        "enabled": enabled,
+        "available": crate::deps::is_installed(feature),
+        "installCommand": crate::deps::install_command(feature),
+    }))
+}
+
 /// Check if Tesseract is available and list installed languages.
 #[tauri::command]
 pub async fn ocr_status() -> serde_json::Value {
@@ -587,7 +612,17 @@ pub async fn ocr_status() -> serde_json::Value {
 
 /// Run OCR on an image file and return the recognized text.
 #[tauri::command]
-pub async fn ocr_recognize(path: String, language: String) -> Result<String> {
+pub async fn ocr_recognize(
+    state: State<'_, AppState>,
+    path: String,
+    language: String,
+) -> Result<String> {
+    let config = state.config.lock().unwrap().clone();
+    if !config.features.ocr {
+        return Err(Error::msg(
+            "OCR is disabled in Settings — enable the OCR feature first",
+        ));
+    }
     crate::ocr::recognize(&path, &language).await
 }
 

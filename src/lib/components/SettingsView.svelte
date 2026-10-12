@@ -7,6 +7,8 @@
   import type { CaptureTask, Config, EffectKind } from '../types';
 
   const initial = structuredClone($state.snapshot(app.config)) as Config;
+  // Older config snapshots don't include the [features] table yet.
+  if (!initial.features) initial.features = { ocr: true };
   let draft = $state<Config>(initial);
 
   onMount(() => {
@@ -17,7 +19,7 @@
   const systemDevices = $derived(app.audioDevices.filter((d) => d.monitor));
   const microphoneDevices = $derived(app.audioDevices.filter((d) => !d.monitor));
 
-  const captureTasks: CaptureTask[] = [
+  const captureTasks = $derived<CaptureTask[]>([
     'save',
     'history',
     'copy',
@@ -27,8 +29,9 @@
     'pin',
     'command',
     'notify',
-    'ocr',
-  ];
+    // The "Run OCR" task only makes sense while the OCR feature is enabled.
+    ...(draft.features?.ocr ? (['ocr'] as CaptureTask[]) : []),
+  ]);
   const uploadTasks: CaptureTask[] = ['copyLink', 'notify', 'open'];
 
   const hotkeyActions = [
@@ -66,6 +69,16 @@
 
   let ocrStatus = $state<{ available: boolean; languages: string[] } | null>(null);
   let checkingOcr = $state(false);
+  let ocrFeature = $state<{ binary: string; installCommand: string | null } | null>(null);
+
+  async function refreshOcrFeature() {
+    try {
+      const info = await api.featureStatus('ocr');
+      ocrFeature = { binary: info.binary, installCommand: info.installCommand };
+    } catch {
+      ocrFeature = null;
+    }
+  }
 
   async function checkOcr() {
     checkingOcr = true;
@@ -74,7 +87,29 @@
     } catch (err) {
       toast(String(err), 'error');
     } finally {
+      await refreshOcrFeature();
       checkingOcr = false;
+    }
+  }
+
+  async function copyInstallCommand() {
+    if (!ocrFeature?.installCommand) return;
+    try {
+      await api.copyText(ocrFeature.installCommand);
+      toast('Install command copied', 'success');
+    } catch (err) {
+      toast(String(err), 'error');
+    }
+  }
+
+  /** Turn the OCR feature on/off; disabling it drops the "Run OCR" task. */
+  function setOcr(enabled: boolean) {
+    draft.features.ocr = enabled;
+    if (!enabled) {
+      draft.afterCapture = {
+        ...draft.afterCapture,
+        tasks: (draft.afterCapture.tasks ?? []).filter((t) => t !== 'ocr'),
+      };
     }
   }
 
@@ -236,25 +271,50 @@
       </p>
 
       <label class="field">
-        <span>Language</span>
-        <input type="text" bind:value={draft.ocrLanguage} placeholder="eng" />
+        <span>Enable OCR</span>
+        <input
+          type="checkbox"
+          checked={draft.features.ocr}
+          onchange={() => setOcr(!draft.features.ocr)}
+        />
       </label>
 
-      <div class="inline">
-        <button class="ghost" onclick={checkOcr} disabled={checkingOcr}>
-          {checkingOcr ? 'Checking…' : 'Check Tesseract'}
-        </button>
-      </div>
+      {#if draft.features.ocr}
+        <label class="field">
+          <span>Language</span>
+          <input type="text" bind:value={draft.ocrLanguage} placeholder="eng" />
+        </label>
 
-      {#if ocrStatus}
-        {#if ocrStatus.available}
-          <p class="hint">
-            Tesseract is installed. Languages:
-            {ocrStatus.languages.length ? ocrStatus.languages.join(', ') : 'none detected'}
-          </p>
-        {:else}
-          <p class="hint error">Tesseract is not installed. Install it to use OCR.</p>
+        <div class="inline">
+          <button class="ghost" onclick={checkOcr} disabled={checkingOcr}>
+            {checkingOcr ? 'Checking…' : 'Check Tesseract'}
+          </button>
+        </div>
+
+        {#if ocrStatus}
+          {#if ocrStatus.available}
+            <p class="hint">
+              Tesseract is installed. Languages:
+              {ocrStatus.languages.length ? ocrStatus.languages.join(', ') : 'none detected'}
+            </p>
+          {:else}
+            <p class="hint error">Tesseract is not installed.</p>
+            {#if ocrFeature?.installCommand}
+              <p class="hint">Install it for your distribution with:</p>
+              <div class="install-box">
+                <code>{ocrFeature.installCommand}</code>
+                <button class="ghost" onclick={copyInstallCommand}>Copy</button>
+              </div>
+            {:else}
+              <p class="hint">
+                Install the {ocrFeature?.binary ?? 'tesseract'} package for your distribution to
+                enable OCR.
+              </p>
+            {/if}
+          {/if}
         {/if}
+      {:else}
+        <p class="hint">OCR is off — Tesseract doesn't need to be installed to use ShareV.</p>
       {/if}
     </div>
 
@@ -733,6 +793,19 @@
     padding: 0.1rem 0.35rem;
     border-radius: 5px;
     font-size: 0.75rem;
+  }
+  .install-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+  }
+  .install-box code {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 0.4rem 0.6rem;
   }
   .bindings {
     display: flex;

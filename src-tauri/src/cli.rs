@@ -360,12 +360,20 @@ fn run_auto(args: &[String]) -> Result<Option<i32>> {
 }
 
 fn run_ocr(path: Option<&str>) -> Result<Option<i32>> {
+    let config = Config::load_or_default();
+    if !config.features.ocr {
+        eprintln!("sharev: OCR is disabled in the config ([features] ocr = false)");
+        if let Some(cmd) = crate::deps::install_command(crate::deps::Feature::Ocr) {
+            eprintln!("sharev: enable it, then install Tesseract with: {cmd}");
+        }
+        return Ok(Some(1));
+    }
+
     let Some(path) = path else {
         eprintln!("sharev: ocr needs a file path");
         return Ok(Some(2));
     };
 
-    let config = Config::load_or_default();
     let runtime = runtime()?;
 
     match runtime.block_on(crate::ocr::recognize(path, &config.ocr_language)) {
@@ -382,6 +390,11 @@ fn run_ocr(path: Option<&str>) -> Result<Option<i32>> {
         }
         Err(err) => {
             eprintln!("sharev: ocr failed: {err}");
+            if err.to_string().contains("is not installed")
+                && let Some(cmd) = crate::deps::install_command(crate::deps::Feature::Ocr)
+            {
+                eprintln!("sharev: install Tesseract with: {cmd}");
+            }
             Ok(Some(1))
         }
     }

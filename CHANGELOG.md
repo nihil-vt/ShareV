@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Feature toggles** — optional features such as OCR can be turned off in
+  Settings (`[features]` in the config), so unneeded system dependencies never
+  have to be installed. Enabling a feature whose dependency is missing shows
+  the install command for your distribution (apt / dnf / pacman / zypper /
+  apk / xbps), both in Settings and in the CLI output.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

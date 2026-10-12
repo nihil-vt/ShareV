@@ -174,6 +174,10 @@ pub async fn run(
             Task::CopyLink => {}
 
             Task::Ocr => {
+                if !config.features.ocr {
+                    log::debug!("skipping OCR task: the OCR feature is disabled");
+                    continue;
+                }
                 if let Some(target) = &path {
                     let lang = config.ocr_language.clone();
                     match crate::ocr::recognize(&target.to_string_lossy(), &lang).await {

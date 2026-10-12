@@ -393,6 +393,21 @@ impl Default for RecordConfig {
     }
 }
 
+/// Optional feature flags. A feature that is off never requires its system
+/// dependency to be installed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Features {
+    /// Optical character recognition (requires Tesseract).
+    pub ocr: bool,
+}
+
+impl Default for Features {
+    fn default() -> Self {
+        Self { ocr: true }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
@@ -434,6 +449,8 @@ pub struct Config {
     pub after_upload: AfterUploadConfig,
     /// OCR language (Tesseract language code, e.g. "eng").
     pub ocr_language: String,
+    /// Toggleable features with optional system dependencies.
+    pub features: Features,
     /// Image effects pipeline.
     pub effects: crate::effects::EffectsConfig,
     /// Scrolling capture settings.
@@ -467,6 +484,7 @@ impl Default for Config {
                 tasks: Some(default_upload_tasks()),
             },
             ocr_language: "eng".into(),
+            features: Features::default(),
             effects: crate::effects::EffectsConfig::default(),
             scroll: crate::scroll::ScrollConfig::default(),
             auto: crate::auto::AutoCaptureConfig::default(),
