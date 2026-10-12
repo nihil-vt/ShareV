@@ -1,33 +1,96 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350" width="500" height="350">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 400" width="560" height="400">
   <defs>
-    <linearGradient id="spGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ff8c00"/>
-      <stop offset="100%" style="stop-color:#ffcc00"/>
+    <linearGradient id="pnBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1f2e"/>
+      <stop offset="100%" style="stop-color:#12151b"/>
     </linearGradient>
-    <linearGradient id="spAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="pnAccent" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#4f8cff"/>
       <stop offset="100%" style="stop-color:#7b5cff"/>
     </linearGradient>
+    <linearGradient id="pnLinux" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff8c00"/>
+      <stop offset="100%" style="stop-color:#ffcc00"/>
+    </linearGradient>
+    <filter id="pnShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.3"/>
+    </filter>
+    <filter id="pnGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ff8c00" flood-opacity="0.3"/>
+    </filter>
   </defs>
-  <rect x="10" y="10" width="480" height="330" rx="16" fill="#12151b" stroke="#2b3240" stroke-width="1.5"/>
-  <rect x="10" y="10" width="480" height="36" rx="16" fill="#171b22"/>
-  <rect x="10" y="30" width="480" height="16" fill="#171b22"/>
-  <circle cx="30" cy="28" r="4" fill="#ff6b6b"/>
-  <circle cx="46" cy="28" r="4" fill="#ffcc00"/>
-  <circle cx="62" cy="28" r="4" fill="#3fbf7f"/>
-  <text x="250" y="33" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Pin Window</text>
-  <rect x="30" y="56" width="440" height="274" rx="10" fill="#1c212b"/>
-  <rect x="60" y="80" width="180" height="120" rx="8" fill="#232936" stroke="url(#spGrad)" stroke-width="2"/>
-  <rect x="80" y="100" width="60" height="35" rx="3" fill="none" stroke="#4f8cff" stroke-width="2"/>
-  <line x1="155" y1="117" x2="200" y2="117" stroke="#ff6b6b" stroke-width="2"/>
-  <circle cx="220" cy="117" r="12" fill="none" stroke="#3fbf7f" stroke-width="2"/>
-  <rect x="280" y="80" width="160" height="120" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <text x="360" y="115" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Desktop</text>
-  <rect x="300" y="130" width="120" height="50" rx="4" fill="#1c212b"/>
-  <rect x="60" y="220" width="180" height="80" rx="8" fill="#232936" stroke="url(#spAccent)" stroke-width="2"/>
-  <circle cx="100" cy="250" r="15" fill="none" stroke="#7b5cff" stroke-width="2"/>
-  <line x1="125" y1="250" x2="180" y2="250" stroke="#ffcc00" stroke-width="2"/>
-  <rect x="280" y="220" width="160" height="80" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <text x="360" y="255" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Always on top</text>
-  <text x="360" y="275" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Transparent</text>
+
+  <!-- Window -->
+  <rect x="20" y="15" width="520" height="370" rx="14" fill="url(#pnBg)" stroke="#2b3240" stroke-width="1" filter="url(#pnShadow)"/>
+
+  <!-- Title bar -->
+  <path d="M20 29 Q20 15 34 15 L526 15 Q540 15 540 29 L540 50 L20 50 Z" fill="#171b22"/>
+  <circle cx="40" cy="32" r="4.5" fill="#ff6b6b"/>
+  <circle cx="57" cy="32" r="4.5" fill="#ffcc00"/>
+  <circle cx="74" cy="32" r="4.5" fill="#3fbf7f"/>
+  <text x="280" y="36" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui" font-weight="500">Pin Window — reference.png</text>
+
+  <!-- Desktop area -->
+  <rect x="20" y="50" width="520" height="335" fill="#0d0f14"/>
+
+  <!-- Desktop grid pattern -->
+  <line x1="100" y1="50" x2="100" y2="385" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="200" y1="50" x2="200" y2="385" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="300" y1="50" x2="300" y2="385" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="400" y1="50" x2="400" y2="385" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="500" y1="50" x2="500" y2="385" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="20" y1="120" x2="540" y2="120" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="20" y1="200" x2="540" y2="200" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="20" y1="280" x2="540" y2="280" stroke="#1a1f2e" stroke-width="0.5"/>
+  <line x1="20" y1="350" x2="540" y2="350" stroke="#1a1f2e" stroke-width="0.5"/>
+
+  <!-- Regular window (behind pin) -->
+  <rect x="80" y="100" width="220" height="160" rx="10" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <path d="M80 114 Q80 100 94 100 L286 100 Q300 100 300 114 L300 130 L80 130 Z" fill="#171b22"/>
+  <text x="190" y="118" text-anchor="middle" fill="#98a2b3" font-size="9" font-family="system-ui">Terminal</text>
+  <rect x="95" y="140" width="190" height="110" rx="4" fill="#0d0f14"/>
+  <text x="105" y="158" fill="#3fbf7f" font-size="8" font-family="monospace">user@linux:~$</text>
+  <text x="105" y="172" fill="#98a2b3" font-size="8" font-family="monospace">neofetch</text>
+  <text x="105" y="186" fill="#ff8c00" font-size="8" font-family="monospace">OS: Linux 6.1</text>
+  <text x="105" y="200" fill="#98a2b3" font-size="8" font-family="monospace">DE: Hyprland</text>
+  <text x="105" y="214" fill="#98a2b3" font-size="8" font-family="monospace">ShareV: 0.2.0</text>
+
+  <!-- Another regular window -->
+  <rect x="320" y="200" width="200" height="140" rx="10" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <path d="M320 214 Q320 200 334 200 L506 200 Q520 200 520 214 L520 230 L320 230 Z" fill="#171b22"/>
+  <text x="420" y="218" text-anchor="middle" fill="#98a2b3" font-size="9" font-family="system-ui">Files</text>
+  <rect x="335" y="240" width="60" height="50" rx="4" fill="#232936"/>
+  <rect x="405" y="240" width="60" height="50" rx="4" fill="#232936"/>
+  <rect x="475" y="240" width="60" height="50" rx="4" fill="#232936"/>
+  <text x="365" y="305" text-anchor="middle" fill="#98a2b3" font-size="8" font-family="system-ui">Pictures</text>
+  <text x="435" y="305" text-anchor="middle" fill="#98a2b3" font-size="8" font-family="system-ui">Docs</text>
+  <text x="505" y="305" text-anchor="middle" fill="#98a2b3" font-size="8" font-family="system-ui">Music</text>
+
+  <!-- PIN WINDOW (on top, glowing border) -->
+  <rect x="260" y="80" width="200" height="120" rx="10" fill="#1c212b" stroke="url(#pnLinux)" stroke-width="2" filter="url(#pnGlow)"/>
+
+  <!-- Pin content - reference image mockup -->
+  <rect x="275" y="95" width="170" height="80" rx="6" fill="#232936"/>
+  <rect x="290" y="108" width="60" height="35" rx="3" fill="none" stroke="#4f8cff" stroke-width="1.5"/>
+  <line x1="365" y1="125" x2="405" y2="125" stroke="#ff6b6b" stroke-width="1.5"/>
+  <circle cx="425" cy="125" r="10" fill="none" stroke="#3fbf7f" stroke-width="1.5"/>
+  <rect x="290" y="150" width="80" height="12" rx="2" fill="#2b3240"/>
+  <rect x="290" y="166" width="60" height="8" rx="2" fill="#1e2430"/>
+
+  <!-- Pin controls -->
+  <circle cx="445" cy="88" r="3" fill="#ff6b6b" opacity="0.8"/>
+  <text x="440" y="80" text-anchor="middle" fill="#98a2b3" font-size="7" font-family="system-ui">double-click to close</text>
+
+  <!-- Feature callouts -->
+  <rect x="50" y="310" width="120" height="50" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <text x="110" y="332" text-anchor="middle" fill="#e7ebf2" font-size="9" font-family="system-ui" font-weight="500">Always on top</text>
+  <text x="110" y="347" text-anchor="middle" fill="#98a2b3" font-size="8" font-family="system-ui">Stays visible</text>
+
+  <rect x="400" y="310" width="120" height="50" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <text x="460" y="332" text-anchor="middle" fill="#e7ebf2" font-size="9" font-family="system-ui" font-weight="500">Transparent</text>
+  <text x="460" y="347" text-anchor="middle" fill="#98a2b3" font-size="8" font-family="system-ui">Borderless</text>
+
+  <!-- Arrow from callout to pin -->
+  <line x1="170" y1="335" x2="260" y2="200" stroke="#ff8c00" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+  <line x1="400" y1="335" x2="460" y2="200" stroke="#ff8c00" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
 </svg>

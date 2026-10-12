@@ -1,35 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350" width="500" height="350">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 400" width="560" height="400">
   <defs>
-    <linearGradient id="stGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ff8c00"/>
-      <stop offset="100%" style="stop-color:#ffcc00"/>
+    <linearGradient id="tkBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1f2e"/>
+      <stop offset="100%" style="stop-color:#12151b"/>
     </linearGradient>
-    <linearGradient id="stAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="tkAccent" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#4f8cff"/>
       <stop offset="100%" style="stop-color:#7b5cff"/>
     </linearGradient>
+    <linearGradient id="tkLinux" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff8c00"/>
+      <stop offset="100%" style="stop-color:#ffcc00"/>
+    </linearGradient>
+    <filter id="tkShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.3"/>
+    </filter>
   </defs>
-  <rect x="10" y="10" width="480" height="330" rx="16" fill="#12151b" stroke="#2b3240" stroke-width="1.5"/>
-  <rect x="10" y="10" width="480" height="36" rx="16" fill="#171b22"/>
-  <rect x="10" y="30" width="480" height="16" fill="#171b22"/>
-  <circle cx="30" cy="28" r="4" fill="#ff6b6b"/>
-  <circle cx="46" cy="28" r="4" fill="#ffcc00"/>
-  <circle cx="62" cy="28" r="4" fill="#3fbf7f"/>
-  <text x="250" y="33" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui">Settings — After Capture Tasks</text>
-  <rect x="30" y="56" width="440" height="274" rx="10" fill="#1c212b"/>
-  <text x="50" y="85" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">After Capture</text>
-  <rect x="50" y="98" width="400" height="36" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <circle cx="68" cy="116" r="6" fill="none" stroke="#ff8c00" stroke-width="1.5"/>
-  <text x="82" y="120" fill="#e7ebf2" font-size="11" font-family="system-ui">Save to disk</text>
-  <rect x="50" y="142" width="400" height="36" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <circle cx="68" cy="160" r="6" fill="none" stroke="#4f8cff" stroke-width="1.5"/>
-  <text x="82" y="164" fill="#e7ebf2" font-size="11" font-family="system-ui">Copy to clipboard</text>
-  <rect x="50" y="186" width="400" height="36" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <circle cx="68" cy="204" r="6" fill="none" stroke="#7b5cff" stroke-width="1.5"/>
-  <text x="82" y="208" fill="#e7ebf2" font-size="11" font-family="system-ui">Open in editor</text>
-  <rect x="50" y="230" width="400" height="36" rx="8" fill="#232936" stroke="#2b3240" stroke-width="1"/>
-  <circle cx="68" cy="248" r="6" fill="none" stroke="#3fbf7f" stroke-width="1.5"/>
-  <text x="82" y="252" fill="#e7ebf2" font-size="11" font-family="system-ui">Upload to Imgur</text>
-  <rect x="50" y="274" width="400" height="36" rx="8" fill="#232936" stroke="url(#stGrad)" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="250" y="296" text-anchor="middle" fill="#98a2b3" font-size="11" font-family="system-ui">+ Add task</text>
+
+  <!-- Window -->
+  <rect x="20" y="15" width="520" height="370" rx="14" fill="url(#tkBg)" stroke="#2b3240" stroke-width="1" filter="url(#tkShadow)"/>
+
+  <!-- Title bar -->
+  <path d="M20 29 Q20 15 34 15 L526 15 Q540 15 540 29 L540 50 L20 50 Z" fill="#171b22"/>
+  <circle cx="40" cy="32" r="4.5" fill="#ff6b6b"/>
+  <circle cx="57" cy="32" r="4.5" fill="#ffcc00"/>
+  <circle cx="74" cy="32" r="4.5" fill="#3fbf7f"/>
+  <text x="280" y="36" text-anchor="middle" fill="#98a2b3" font-size="10" font-family="system-ui" font-weight="500">Settings — After Capture Tasks</text>
+
+  <!-- Content -->
+  <rect x="20" y="50" width="520" height="335" fill="#12151b"/>
+
+  <!-- Section header -->
+  <text x="45" y="80" fill="#e7ebf2" font-size="13" font-family="system-ui" font-weight="600">After Capture</text>
+  <text x="45" y="96" fill="#98a2b3" font-size="9" font-family="system-ui">Tasks run in order after each capture</text>
+
+  <!-- Task items -->
+  <rect x="45" y="110" width="470" height="42" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <circle cx="65" cy="131" r="4" fill="none" stroke="#ff8c00" stroke-width="1.5"/>
+  <path d="M63 131 L65 133 L68 129" fill="none" stroke="#ff8c00" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="80" y="128" fill="#e7ebf2" font-size="11" font-family="system-ui" font-weight="500">Save to disk</text>
+  <text x="80" y="142" fill="#98a2b3" font-size="9" font-family="system-ui">~/Pictures/ShareV</text>
+  <rect x="490" y="122" width="16" height="16" rx="4" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <line x1="494" y1="130" x2="502" y2="130" stroke="#98a2b3" stroke-width="1"/>
+  <line x1="498" y1="126" x2="498" y2="134" stroke="#98a2b3" stroke-width="1"/>
+
+  <rect x="45" y="160" width="470" height="42" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <circle cx="65" cy="181" r="4" fill="none" stroke="#4f8cff" stroke-width="1.5"/>
+  <text x="80" y="178" fill="#e7ebf2" font-size="11" font-family="system-ui" font-weight="500">Copy to clipboard</text>
+  <text x="80" y="192" fill="#98a2b3" font-size="9" font-family="system-ui">Image format (PNG)</text>
+  <rect x="490" y="172" width="16" height="16" rx="4" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <line x1="494" y1="180" x2="502" y2="180" stroke="#98a2b3" stroke-width="1"/>
+  <line x1="498" y1="176" x2="498" y2="184" stroke="#98a2b3" stroke-width="1"/>
+
+  <rect x="45" y="210" width="470" height="42" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <circle cx="65" cy="231" r="4" fill="none" stroke="#7b5cff" stroke-width="1.5"/>
+  <text x="80" y="228" fill="#e7ebf2" font-size="11" font-family="system-ui" font-weight="500">Open in editor</text>
+  <text x="80" y="242" fill="#98a2b3" font-size="9" font-family="system-ui">Launch annotation editor</text>
+  <rect x="490" y="222" width="16" height="16" rx="4" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <line x1="494" y1="230" x2="502" y2="230" stroke="#98a2b3" stroke-width="1"/>
+  <line x1="498" y1="226" x2="498" y2="234" stroke="#98a2b3" stroke-width="1"/>
+
+  <rect x="45" y="260" width="470" height="42" rx="8" fill="#1c212b" stroke="url(#tkLinux)" stroke-width="1.5"/>
+  <circle cx="65" cy="281" r="4" fill="none" stroke="#ffcc00" stroke-width="1.5"/>
+  <text x="80" y="278" fill="#e7ebf2" font-size="11" font-family="system-ui" font-weight="500">Upload to Imgur</text>
+  <text x="80" y="292" fill="#98a2b3" font-size="9" font-family="system-ui">Anonymous upload — Client ID configured</text>
+  <rect x="490" y="272" width="16" height="16" rx="4" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <line x1="494" y1="280" x2="502" y2="280" stroke="#98a2b3" stroke-width="1"/>
+  <line x1="498" y1="276" x2="498" y2="284" stroke="#98a2b3" stroke-width="1"/>
+
+  <rect x="45" y="310" width="470" height="42" rx="8" fill="#1c212b" stroke="#2b3240" stroke-width="1"/>
+  <circle cx="65" cy="331" r="4" fill="none" stroke="#3fbf7f" stroke-width="1.5"/>
+  <text x="80" y="328" fill="#e7ebf2" font-size="11" font-family="system-ui" font-weight="500">Copy link to clipboard</text>
+  <text x="80" y="342" fill="#98a2b3" font-size="9" font-family="system-ui">After upload completes</text>
+  <rect x="490" y="322" width="16" height="16" rx="4" fill="#232936" stroke="#2b3240" stroke-width="1"/>
+  <line x1="494" y1="330" x2="502" y2="330" stroke="#98a2b3" stroke-width="1"/>
+  <line x1="498" y1="326" x2="498" y2="334" stroke="#98a2b3" stroke-width="1"/>
+
+  <!-- Add task button -->
+  <rect x="45" y="360" width="470" height="14" rx="7" fill="none" stroke="#2b3240" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="280" y="370" text-anchor="middle" fill="#98a2b3" font-size="9" font-family="system-ui">+ Add task</text>
+
+  <!-- After Upload section -->
+  <text x="45" y="400" fill="#e7ebf2" font-size="13" font-family="system-ui" font-weight="600">After Upload</text>
 </svg>

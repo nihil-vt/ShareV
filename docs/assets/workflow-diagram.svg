@@ -1,10 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 200" width="820" height="200">
   <defs>
-    <linearGradient id="wfGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="wfGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#ff8c00"/>
       <stop offset="100%" style="stop-color:#ffcc00"/>
     </linearGradient>
-    <linearGradient id="wfAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="wfGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f8cff"/>
+      <stop offset="100%" style="stop-color:#7b5cff"/>
+    </linearGradient>
+    <linearGradient id="wfGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff8c00"/>
+      <stop offset="100%" style="stop-color:#ffcc00"/>
+    </linearGradient>
+    <linearGradient id="wfGrad4" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#4f8cff"/>
       <stop offset="100%" style="stop-color:#7b5cff"/>
     </linearGradient>
@@ -17,40 +25,40 @@
   </defs>
 
   <!-- Step 1: Capture -->
-  <rect x="20" y="50" width="140" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad)" stroke-width="2"/>
-  <rect x="55" y="70" width="70" height="40" rx="6" fill="none" stroke="#ff8c00" stroke-width="2" stroke-dasharray="5 3"/>
-  <circle cx="55" cy="70" r="3" fill="#ff8c00"/>
-  <circle cx="125" cy="70" r="3" fill="#ff8c00"/>
-  <circle cx="55" cy="110" r="3" fill="#ff8c00"/>
-  <circle cx="125" cy="110" r="3" fill="#ff8c00"/>
-  <text x="90" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Capture</text>
+  <rect x="30" y="50" width="150" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad1)" stroke-width="2"/>
+  <rect x="70" y="70" width="70" height="40" rx="6" fill="none" stroke="#ff8c00" stroke-width="2" stroke-dasharray="5 3"/>
+  <circle cx="70" cy="70" r="4" fill="#ff8c00"/>
+  <circle cx="140" cy="70" r="4" fill="#ff8c00"/>
+  <circle cx="70" cy="110" r="4" fill="#ff8c00"/>
+  <circle cx="140" cy="110" r="4" fill="#ff8c00"/>
+  <text x="105" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Capture</text>
 
   <!-- Arrow 1 -->
-  <line x1="165" y1="100" x2="205" y2="100" stroke="#ff8c00" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="185" y1="100" x2="225" y2="100" stroke="#ff8c00" stroke-width="2" marker-end="url(#arrowOrange)"/>
 
   <!-- Step 2: Annotate -->
-  <rect x="210" y="50" width="140" height="100" rx="14" fill="#1c212b" stroke="url(#wfAccent)" stroke-width="2"/>
-  <rect x="240" y="70" width="30" height="20" rx="3" fill="none" stroke="#4f8cff" stroke-width="2"/>
-  <line x1="280" y1="80" x2="310" y2="80" stroke="#7b5cff" stroke-width="2"/>
-  <circle cx="320" cy="80" r="8" fill="none" stroke="#4f8cff" stroke-width="2"/>
-  <text x="280" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Annotate</text>
+  <rect x="230" y="50" width="150" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad2)" stroke-width="2"/>
+  <rect x="265" y="70" width="30" height="20" rx="3" fill="none" stroke="#4f8cff" stroke-width="2"/>
+  <line x1="310" y1="80" x2="340" y2="80" stroke="#7b5cff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="355" cy="80" r="10" fill="none" stroke="#4f8cff" stroke-width="2"/>
+  <text x="305" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Annotate</text>
 
   <!-- Arrow 2 -->
-  <line x1="355" y1="100" x2="395" y2="100" stroke="#4f8cff" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <line x1="385" y1="100" x2="425" y2="100" stroke="#4f8cff" stroke-width="2" marker-end="url(#arrowBlue)"/>
 
   <!-- Step 3: Upload -->
-  <rect x="400" y="50" width="140" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad)" stroke-width="2"/>
-  <path d="M455 95 L470 75 L485 95 Z" fill="none" stroke="#ff8c00" stroke-width="2" stroke-linejoin="round"/>
-  <rect x="462" y="95" width="16" height="14" rx="2" fill="none" stroke="#ff8c00" stroke-width="2"/>
-  <text x="470" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Upload</text>
+  <rect x="430" y="50" width="150" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad3)" stroke-width="2"/>
+  <path d="M490 100 L505 75 L520 100 Z" fill="none" stroke="#ff8c00" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="497" y="100" width="16" height="14" rx="2" fill="none" stroke="#ff8c00" stroke-width="2"/>
+  <text x="505" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Upload</text>
 
   <!-- Arrow 3 -->
-  <line x1="545" y1="100" x2="585" y2="100" stroke="#ff8c00" stroke-width="2" marker-end="url(#arrowOrange)"/>
+  <line x1="585" y1="100" x2="625" y2="100" stroke="#ff8c00" stroke-width="2" marker-end="url(#arrowOrange)"/>
 
   <!-- Step 4: Share -->
-  <rect x="590" y="50" width="140" height="100" rx="14" fill="#1c212b" stroke="url(#wfAccent)" stroke-width="2"/>
-  <circle cx="640" cy="85" r="12" fill="none" stroke="#4f8cff" stroke-width="2"/>
-  <circle cx="680" cy="85" r="12" fill="none" stroke="#7b5cff" stroke-width="2"/>
-  <line x1="652" y1="85" x2="668" y2="85" stroke="#98a2b3" stroke-width="1.5"/>
-  <text x="660" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Share</text>
+  <rect x="630" y="50" width="150" height="100" rx="14" fill="#1c212b" stroke="url(#wfGrad4)" stroke-width="2"/>
+  <circle cx="675" cy="85" r="14" fill="none" stroke="#4f8cff" stroke-width="2"/>
+  <circle cx="735" cy="85" r="14" fill="none" stroke="#7b5cff" stroke-width="2"/>
+  <line x1="689" y1="85" x2="721" y2="85" stroke="#98a2b3" stroke-width="1.5"/>
+  <text x="705" y="135" text-anchor="middle" fill="#e7ebf2" font-size="13" font-weight="600" font-family="system-ui">Share</text>
 </svg>
