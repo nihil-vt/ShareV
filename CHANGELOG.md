@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-12
+
+### Added
+
+- **Scrolling capture** — pick a region, ShareV scrolls the page automatically
+  and stitches the frames into a single tall image (overlap detection +
+  row-signature matching). Trigger it from the Capture view, the tray, or
+  `sharev capture scrolling [path]`.
+- **Auto capture** — grab a locked region (or the full screen) on an interval,
+  save only when the content changes, and stop after N captures or a time
+  limit. Live controls in the Capture view, Start/Stop in the tray, and
+  `sharev capture auto` with an interruptible Ctrl-C stop.
+- **OCR** — extract text with Tesseract via `sharev ocr <path>`, the **Run OCR**
+  capture task, or the editor's OCR button, and copy the result straight to the
+  clipboard (configurable language in Settings).
+- **Image effects** — shadow, border, reflection and blur applied in sequence
+  after saving, configured in Settings; the history entry and `CaptureResult`
+  report the final edited file (dimensions and bytes).
+- **Editor toolset** — standalone editor window adding a step counter, solid /
+  dashed / dotted line styles, arrowheads on either end, magnifier, spotlight,
+  cursor, cutout and crop tools alongside the existing shapes and text.
+- Per-source default audio devices when recording (system sink monitor vs
+  microphone) with either recorder backend.
+
+### Changed
+
+- Captures now surface exclusively through the `capture-completed` event, so
+  UI, tray and hotkey captures all flow through the same path (no duplicate
+  toasts or history refreshes, and auto capture doesn't toast per frame).
+- Editor saves and the image-effects task re-encode through the pipeline so the
+  file bytes always match the file extension (JPEG saves flatten transparency
+  correctly).
+- Auto-capture stop interrupts the current interval immediately instead of
+  waiting for the next one to elapse.
+
+### Fixed
+
+- History: writes are atomic (temp file + rename) and serialised under a lock,
+  so concurrent auto-capture and UI updates can't lose entries — and a corrupt
+  history file is logged instead of silently wiping all history.
+- Recording could be started twice concurrently through the tray / hotkeys /
+  UI race; the slot is now reserved before interactive target selection.
+- Non-interactive capture failures with empty stderr are reported as errors
+  instead of being misclassified as "cancelled".
+- Copying a recording (or any non-image) now copies a `text/uri-list` instead
+  of failing to decode it as a PNG.
+- `xdg-open` children are reaped so they don't linger as zombies.
+- Selecting an unavailable capture backend explicitly now gives a clear error.
+- The XDG portal shortcuts session is closed when a new one replaces it.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

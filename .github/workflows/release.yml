@@ -43,6 +43,46 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Extract changelog for release notes
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          notes="$(mktemp)"
+          {
+            echo "Download the bundle for your distribution below."
+            echo ""
+            echo "- \`.deb\` — Debian / Ubuntu"
+            echo "- \`.rpm\` — Fedora / openSUSE"
+            echo "- \`.AppImage\` — any distribution"
+            echo ""
+            echo "The \`.sig\` files and \`latest.json\` are used by the built-in updater."
+            echo ""
+          } > "$notes"
+          python3 - "$VERSION" "$notes" <<'PY'
+          import re
+          import sys
+
+          version, path = sys.argv[1], sys.argv[2]
+          text = open("CHANGELOG.md").read()
+          match = re.search(
+              r"## \[\s*" + re.escape(version) + r"\s*\].*?(?=\n## \[|\Z)",
+              text,
+              re.S,
+          )
+          section = match.group(0).strip() if match else ""
+          if not section:
+              section = "_No changelog entry for this version yet._"
+          with open(path, "a") as f:
+              f.write(section + "\n")
+          PY
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          cat "$notes" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          rm -f "$notes"
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -52,14 +92,7 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: 'ShareV ${{ github.ref_name }}'
-          releaseBody: |
-            Download the bundle for your distribution below.
-
-            - `.deb` — Debian / Ubuntu
-            - `.rpm` — Fedora / openSUSE
-            - `.AppImage` — any distribution
-
-            The `.sig` files and `latest.json` are used by the built-in updater.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: --config src-tauri/tauri.updater.conf.json
