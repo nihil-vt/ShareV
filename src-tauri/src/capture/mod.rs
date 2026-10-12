@@ -43,10 +43,17 @@ pub fn select_backend(preferred: &str) -> Result<Box<dyn CaptureBackend>> {
         other => return Err(Error::msg(format!("unknown capture backend '{other}'"))),
     };
 
-    all_backends()
+    let backend = all_backends()
         .into_iter()
         .find(|b| b.id() == wanted)
-        .ok_or_else(|| Error::BackendUnavailable(wanted.to_string(), "not available".into()))
+        .ok_or_else(|| Error::BackendUnavailable(wanted.to_string(), "not available".into()))?;
+    if !backend.is_available() {
+        return Err(Error::BackendUnavailable(
+            wanted.to_string(),
+            "the selected backend is not available on this system".into(),
+        ));
+    }
+    Ok(backend)
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::capture::which;
 use crate::config::ImageFormat;
 use crate::error::{Error, Result};
-use crate::platform::display::{detect, DisplayServer};
+use crate::platform::display::{DisplayServer, detect};
 
 /// Copy an image file to the system clipboard.
 ///
@@ -23,13 +23,26 @@ pub fn copy_bytes(data: &[u8], mime: &str) -> Result<()> {
         DisplayServer::Wayland if which("wl-copy").is_some() => {
             pipe_to("wl-copy", &["--type", mime], data)
         }
-        _ if which("xclip").is_some() => {
-            pipe_to("xclip", &["-selection", "clipboard", "-t", mime, "-i"], data)
-        }
+        _ if which("xclip").is_some() => pipe_to(
+            "xclip",
+            &["-selection", "clipboard", "-t", mime, "-i"],
+            data,
+        ),
         _ => Err(Error::msg(
             "no clipboard tool available (install wl-clipboard or xclip)",
         )),
     }
+}
+
+/// Copy a non-image file to the clipboard as a `text/uri-list`, so it can be
+/// pasted into file managers and apps that accept file drops.
+pub fn copy_file_uri(path: &Path) -> Result<()> {
+    let absolute = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let uri = format!(
+        "file://{}\r\n",
+        absolute.display().to_string().replace(' ', "%20")
+    );
+    copy_bytes(uri.as_bytes(), "text/uri-list")
 }
 
 /// Copy plain text to the system clipboard.

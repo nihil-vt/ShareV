@@ -1070,16 +1070,11 @@ pub fn reveal_path(path: String) -> Result<()> {
 
 #[tauri::command]
 pub fn copy_file_to_clipboard(path: String) -> Result<()> {
-    let format = match Path::new(&path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("jpg" | "jpeg") => ImageFormat::Jpeg,
-        Some("webp") => ImageFormat::Webp,
-        _ => ImageFormat::Png,
-    };
-    clipboard::copy_image(Path::new(&path), format)
+    match ImageFormat::from_path(Path::new(&path)) {
+        Some(format) => clipboard::copy_image(Path::new(&path), format),
+        // Not an image we can decode (e.g. a recording) — copy it as a file.
+        None => clipboard::copy_file_uri(Path::new(&path)),
+    }
 }
 
 #[tauri::command]

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use super::backend::{decode_png, CaptureBackend, CaptureRequest, CapturedImage, Geometry};
+use super::backend::{CaptureBackend, CaptureRequest, CapturedImage, Geometry, decode_png};
 use crate::capture::which;
 use crate::error::{Error, Result};
 
@@ -50,17 +50,18 @@ impl CaptureBackend for WlrootsBackend {
         if let Some(g) = geometry {
             cmd.arg("-g").arg(g.to_grim());
         }
-        cmd.arg("-")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.arg("-").stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let output = cmd.output().await.map_err(Error::Io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            if stderr.is_empty() {
-                return Err(Error::Cancelled);
-            }
-            return Err(Error::BackendUnavailable("wlroots".into(), stderr));
+            // `grim` is never interactive, so a non-zero exit is a real failure.
+            let message = if stderr.is_empty() {
+                format!("grim exited with status {}", output.status)
+            } else {
+                stderr
+            };
+            return Err(Error::BackendUnavailable("wlroots".into(), message));
         }
         if output.stdout.is_empty() {
             return Err(Error::EmptyCapture);

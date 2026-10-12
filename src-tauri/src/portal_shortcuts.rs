@@ -53,7 +53,13 @@ pub fn start(app: AppHandle, bindings: Vec<HotkeyBinding>, fallback: bool) {
             Ok(session) => {
                 AVAILABLE.store(true, Ordering::Relaxed);
                 shortcuts::set_backend("portal");
-                *state().lock().unwrap() = Some(Active { session });
+                // Close any previous session instead of dropping it silently.
+                let previous = state().lock().unwrap().replace(Active { session });
+                if let Some(previous) = previous
+                    && let Err(err) = previous.session.close().await
+                {
+                    log::warn!("could not close the previous portal session: {err}");
+                }
             }
             Err(err) => {
                 AVAILABLE.store(false, Ordering::Relaxed);
