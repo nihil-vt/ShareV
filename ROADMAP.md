@@ -2,6 +2,90 @@
 
 Current status: **Milestone 11 — Auto Capture & Monitoring** (complete)
 
+Milestones 1–6 shipped before this file existed; they are recorded here as
+complete for reference.
+
+## Milestone 1 — Core Capture Engine
+
+**Goal:** A dependable screenshot core with a backend abstraction.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Backend abstraction | `CaptureBackend` trait (wlroots / X11 / portal stub) | Done |
+| Region capture | Interactive region select (`slurp` / ImageMagick `import`) | Done |
+| Fullscreen capture | Capture the whole screen | Done |
+| Clipboard | Copy image / text (`wl-copy` / `xclip`) | Done |
+| Output formats | PNG / JPEG / WebP with configurable quality | Done |
+| History | JSON history store with search | Done |
+| Config | TOML config with sensible defaults | Done |
+| CLI | `sharev capture`, `sharev diagnostics` | Done |
+
+## Milestone 2 — Annotation Editor
+
+**Goal:** Annotate captures before saving or sharing.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Basic tools | Rectangle, ellipse, arrow, pen, text | Done |
+| Highlighter | Semi-transparent highlight stroke | Done |
+| Blur / pixelate | Obscure sensitive areas | Done |
+| Crop | Trim the captured canvas | Done |
+| Undo / redo | Undo/redo history stack | Done |
+| Save / copy | Apply edits, re-save and copy | Done |
+
+## Milestone 3 — Uploading & Sharing
+
+**Goal:** Get captures off the machine quickly.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Imgur uploader | Anonymous upload via Client-ID | Done |
+| HTTP uploader | `multipart/form-data` POST with headers + JSON path | Done |
+| Command uploader | Custom shell command (`{file}` / `$SHAREV_FILE`) | Done |
+| Copy formats | Copy link as URL / Markdown / HTML | Done |
+| CLI | `sharev upload <path>` | Done |
+
+## Milestone 4 — Screen Recording
+
+**Goal:** Record the screen to a shareable video or GIF.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Recording backends | `wf-recorder` (Wayland), `ffmpeg` (X11) | Done |
+| Formats | MP4/H.264, WebM/VP9, animated GIF | Done |
+| Audio | Optional system and/or microphone capture | Done |
+| Target selection | Region, fullscreen or focused window | Done |
+| History | Recordings stored in the same history | Done |
+| CLI | `sharev record <kind>` | Done |
+
+## Milestone 5 — Packaging, CI & Auto-Updates
+
+**Goal:** Distributable builds and a release pipeline.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Packages | `.deb`, `.rpm` and AppImage bundles | Done |
+| CI | Checks + tests workflow | Done |
+| Release workflow | Tagged builds producing a draft release | Done |
+| Auto-updates | Signed in-app updates from GitHub Releases | Done |
+| Version bump | `bun run bump <version>` | Done |
+
+## Milestone 6 — Capture Workflow, Tasks & Hotkeys
+
+**Goal:** ShareX-style capture flow and global access.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Delay timer | Configurable pre-capture delay | Done |
+| Monitor picker | Choose a monitor for fullscreen capture | Done |
+| Window picker | Capture a specific window | Done |
+| Task chains | Ordered post-capture / post-upload tasks | Done |
+| Pin-to-screen | Borderless always-on-top floating capture | Done |
+| Wayland hotkeys | XDG portal GlobalShortcuts (`ashpd`) | Done |
+| X11 hotkeys | `tauri-plugin-global-shortcut` | Done |
+| Hotkey editor | Binding editor with backend selection | Done |
+| Dynamic tray | Start/Stop recording, pin/upload last | Done |
+
 ## Milestone 7 — Annotation & Editing
 
 **Goal:** Match ShareX's editor toolset for screenshot annotation.
