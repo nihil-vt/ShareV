@@ -136,6 +136,12 @@ export interface PinInfo {
   height: number;
 }
 
+export interface EditorInfo {
+  path: string;
+  width: number;
+  height: number;
+}
+
 export interface RecordingInfo {
   path: string;
   kind: string;

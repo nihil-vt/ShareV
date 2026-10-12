@@ -6,6 +6,7 @@ import type {
   CaptureResult,
   Config,
   Diagnostics,
+  EditorInfo,
   Geometry,
   HistoryEntry,
   MonitorInfo,
@@ -60,6 +61,8 @@ export const api = {
   applyEdits: (path: string, data: string) =>
     invoke<CaptureResult>('apply_edits', { path, data }),
   copyEdits: (data: string) => invoke<void>('copy_edits', { data }),
+  openEditor: (path: string) => invoke<string>('open_editor', { path }),
+  editorInfo: () => invoke<EditorInfo | null>('editor_info'),
 
   uploadPath: (path: string) => invoke<UploadOutcome>('upload_path', { path }),
   uploadLast: () => invoke<UploadOutcome | null>('upload_last'),

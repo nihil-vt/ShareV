@@ -8,15 +8,17 @@
   import HistoryView from './lib/components/HistoryView.svelte';
   import SettingsView from './lib/components/SettingsView.svelte';
   import DiagnosticsView from './lib/components/DiagnosticsView.svelte';
-  import EditorView from './lib/components/EditorView.svelte';
+  import EditorWindow from './lib/components/EditorWindow.svelte';
   import PinView from './lib/components/PinView.svelte';
   import Toasts from './lib/components/Toasts.svelte';
+  import { api } from './lib/api';
   import { app, init, reloadHistory, toast } from './lib/state.svelte';
   import type { CaptureResult, RecordingInfo, RecordingResult } from './lib/types';
 
-  // Pin windows are separate webviews created by the backend; they render a
-  // single image instead of the full app.
+  // Pin and editor windows are separate webviews created by the backend;
+  // they render their own UI instead of the full app.
   const pinWindow = $derived(getCurrentWindow().label.startsWith('pin-'));
+  const editorWindow = $derived(getCurrentWindow().label.startsWith('editor-'));
 
   $effect(() => {
     document.documentElement.classList.toggle('pin-mode', pinWindow);
@@ -50,9 +52,11 @@
       reloadHistory();
     });
 
-    // The `open-editor` hotkey action surfaces the main window.
+    // The `open-editor` hotkey action opens the editor in its own window.
     const unlistenEditor = listen('open-editor', () => {
-      if (app.view !== 'editor') app.view = 'capture';
+      if (app.last?.path) {
+        api.openEditor(app.last.path).catch((err) => toast(`Could not open editor: ${err}`, 'error'));
+      }
     });
 
     return () => {
@@ -66,14 +70,14 @@
 
 {#if pinWindow}
   <PinView />
+{:else if editorWindow}
+  <EditorWindow />
 {:else}
   <div class="app">
     <Sidebar />
     <main class="content">
       {#if !app.ready}
         <div class="loading">Loading…</div>
-      {:else if app.view === 'editor'}
-        <EditorView />
       {:else if app.view === 'capture'}
         <CaptureView />
       {:else if app.view === 'record'}

@@ -105,8 +105,11 @@ export async function doCapture(kind: CaptureKind, options: CaptureOptions = {})
     await reloadHistory();
     toast(`Saved ${result.fileName}`, 'success');
     if (result.openEditor && result.path) {
-      app.editing = result;
-      app.view = 'editor';
+      try {
+        await api.openEditor(result.path);
+      } catch (err) {
+        toast(`Could not open editor: ${err}`, 'error');
+      }
     }
   } catch (err) {
     const message = String(err);

@@ -180,6 +180,21 @@ pub fn pin_last(app: AppHandle) -> Result<Option<String>> {
 // Annotation editor
 // ---------------------------------------------------------------------------
 
+/// Open the annotation editor in a standalone window for `path`.
+#[tauri::command]
+pub fn open_editor(app: AppHandle, path: String) -> Result<String> {
+    if !Path::new(&path).exists() {
+        return Err(Error::msg("that file no longer exists"));
+    }
+    crate::editor::open_editor(&app, &path)
+}
+
+/// Data for an editor window to render itself (looked up by window label).
+#[tauri::command]
+pub fn editor_info(window: tauri::WebviewWindow) -> Option<crate::editor::EditorInfo> {
+    crate::editor::info(window.label())
+}
+
 /// Read an image file as a `data:` URL the webview can draw onto a canvas
 /// without tainting it.
 #[tauri::command]

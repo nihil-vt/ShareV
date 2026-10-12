@@ -31,7 +31,7 @@ pub async fn run(
     let mut file_name = String::new();
     let mut copied = false;
     let mut url: Option<String> = None;
-    let mut open_editor = false;
+    let open_editor = false;
 
     for task in config.after_capture_tasks() {
         match task {
@@ -76,7 +76,13 @@ pub async fn run(
                 }
             }
 
-            Task::Editor => open_editor = true,
+            Task::Editor => {
+                if let (Some(app), Some(target)) = (app, &path)
+                    && let Err(err) = crate::commands::open_editor(app.clone(), target.to_string_lossy().into_owned())
+                {
+                    log::warn!("could not open editor: {err}");
+                }
+            }
 
             Task::Open => {
                 if let Some(target) = &path

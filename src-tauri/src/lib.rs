@@ -3,6 +3,7 @@ pub mod cli;
 pub mod clipboard;
 pub mod commands;
 pub mod config;
+pub mod editor;
 pub mod error;
 pub mod history;
 pub mod id;
@@ -79,6 +80,8 @@ pub fn run() {
             commands::read_image_base64,
             commands::apply_edits,
             commands::copy_edits,
+            commands::open_editor,
+            commands::editor_info,
             commands::upload_path,
             commands::upload_last,
             commands::start_recording,

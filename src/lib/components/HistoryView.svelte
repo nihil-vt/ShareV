@@ -45,9 +45,12 @@
     }
   }
 
-  function edit(entry: HistoryEntry) {
-    app.editing = entry;
-    app.view = 'editor';
+  async function edit(entry: HistoryEntry) {
+    try {
+      await api.openEditor(entry.path);
+    } catch (err) {
+      toast(`Could not open editor: ${err}`, 'error');
+    }
   }
 
   async function upload(entry: HistoryEntry) {
