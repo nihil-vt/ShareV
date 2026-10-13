@@ -1,12 +1,47 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import {
+    Canvas,
+    Rect,
+    Ellipse,
+    Circle,
+    Triangle,
+    Line,
+    Path,
+    Group,
+    Textbox,
+    FabricImage,
+    PencilBrush,
+    filters,
+    type FabricObject,
+    type TMat2D,
+    type TPointerEvent,
+  } from 'fabric';
   import { api } from '../api';
   import { toast } from '../state.svelte';
 
-  type Tool = 'rect' | 'ellipse' | 'arrow' | 'line' | 'pen' | 'text' | 'highlight' | 'pixelate' | 'blur' | 'step' | 'balloon' | 'magnify' | 'spotlight' | 'cursor' | 'cutout' | 'crop';
+  type Tool =
+    | 'select'
+    | 'rect'
+    | 'ellipse'
+    | 'arrow'
+    | 'line'
+    | 'pen'
+    | 'text'
+    | 'highlight'
+    | 'pixelate'
+    | 'blur'
+    | 'step'
+    | 'balloon'
+    | 'magnify'
+    | 'spotlight'
+    | 'cursor'
+    | 'cutout'
+    | 'crop';
 
   const tools: { id: Tool; label: string; icon: string }[] = [
+    { id: 'select', label: 'Select / move (V)', icon: '⤢' },
     { id: 'rect', label: 'Rectangle', icon: '▭' },
     { id: 'ellipse', label: 'Ellipse', icon: '◯' },
     { id: 'arrow', label: 'Arrow', icon: '➔' },
@@ -25,11 +60,13 @@
     { id: 'crop', label: 'Crop', icon: '⛶' },
   ];
 
-  const MAX_UNDO = 20;
-  const MIN_CROP = 6;
+  const MAX_UNDO = 30;
+  const MIN_SIZE = 4;
 
-  let canvas = $state<HTMLCanvasElement | null>(null);
-  let tool = $state<Tool>('rect');
+  let canvasEl = $state<HTMLCanvasElement | null>(null);
+  let stageEl = $state<HTMLDivElement | null>(null);
+  let fcanvas: Canvas | null = null;
+  let tool = $state<Tool>('select');
   let color = $state('#ff3b30');
   let strokeWidth = $state(4);
   let text = $state('');
@@ -47,34 +84,75 @@
   let arrowStart = $state(false);
   let arrowEnd = $state(true);
   let fontFamily = $state('system-ui');
+  let fontSize = $state(28);
   let magnifyZoom = $state(2);
   let balloonText = $state('');
-  let cursorX = $state(0);
-  let cursorY = $state(0);
+  let zoom = $state(1);
+  let zoomLabel = $state('Fit');
 
-  // Undo/redo snapshots hold the *before* state of every edit.
-  let undoStack: ImageData[] = [];
-  let redoStack: ImageData[] = [];
-  let original: ImageData | null = null;
+  // Undo/redo hold full canvas JSON snapshots (objects + background).
+  let undoStack: string[] = [];
+  let redoStack: string[] = [];
+  let suppressHistory = false;
+  let originalDataUrl: string | null = null;
 
-  // Transient drag state.
-  let drawing = false;
-  let startX = 0;
-  let startY = 0;
-  let base: ImageData | null = null;
-
-  function ctx(): CanvasRenderingContext2D | null {
-    return canvas?.getContext('2d', { willReadFrequently: true }) ?? null;
-  }
+  // Transient drag state for shape tools.
+  let dragObj: FabricObject | null = null;
+  let dragStart: { x: number; y: number } | null = null;
 
   function sync() {
     hasUndo = undoStack.length > 0;
     hasRedo = redoStack.length > 0;
-    if (canvas) dims = { w: canvas.width, h: canvas.height };
   }
 
+  function pushHistory() {
+    if (suppressHistory || !fcanvas) return;
+    undoStack.push(JSON.stringify(fcanvas.toJSON()));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack = [];
+    dirty = true;
+    sync();
+  }
+
+  async function restore(json: string) {
+    if (!fcanvas) return;
+    suppressHistory = true;
+    try {
+      await fcanvas.loadFromJSON(JSON.parse(json));
+    } finally {
+      suppressHistory = false;
+    }
+    fcanvas.requestRenderAll();
+    syncDims();
+    sync();
+  }
+
+  async function undo() {
+    if (!fcanvas || undoStack.length === 0) return;
+    redoStack.push(JSON.stringify(fcanvas.toJSON()));
+    const prev = undoStack.pop()!;
+    dirty = true;
+    await restore(prev);
+  }
+
+  async function redo() {
+    if (!fcanvas || redoStack.length === 0) return;
+    undoStack.push(JSON.stringify(fcanvas.toJSON()));
+    const next = redoStack.pop()!;
+    dirty = true;
+    await restore(next);
+  }
+
+  function syncDims() {
+    if (fcanvas) dims = { w: fcanvas.getWidth(), h: fcanvas.getHeight() };
+  }
+
+  // -------------------------------------------------------------------------
+  // Setup / loading
+  // -------------------------------------------------------------------------
+
   async function load() {
-    if (!canvas) return;
+    if (!canvasEl) return;
     loading = true;
     try {
       const info = await api.editorInfo();
@@ -84,27 +162,40 @@
       }
       filePath = info.path;
       const dataUrl = await api.readImageBase64(info.path);
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error('could not decode the image'));
-        image.src = dataUrl;
+      originalDataUrl = dataUrl;
+
+      fcanvas = new Canvas(canvasEl, {
+        enableRetinaScaling: false,
+        preserveObjectStacking: true,
+        stopContextMenu: true,
       });
 
-      const c = canvas;
-      c.width = image.naturalWidth || image.width;
-      c.height = image.naturalHeight || image.height;
-      const context = ctx();
-      if (!context) throw new Error('canvas is unavailable');
-      context.imageSmoothingEnabled = true;
-      context.drawImage(image, 0, 0);
+      const bg = await FabricImage.fromURL(dataUrl);
+      bg.set({ selectable: false, evented: false, excludeFromExport: false });
+      const w = bg.width || info.width;
+      const h = bg.height || info.height;
+      fcanvas.backgroundImage = bg;
+      fcanvas.setDimensions({ width: w, height: h });
+      syncDims();
 
-      original = context.getImageData(0, 0, c.width, c.height);
+      fcanvas.on('object:added', () => pushHistory());
+      fcanvas.on('object:modified', () => pushHistory());
+      fcanvas.on('object:removed', () => pushHistory());
+      fcanvas.on('path:created', () => pushHistory());
+      fcanvas.on('mouse:down', onCanvasDown);
+      fcanvas.on('mouse:move', onCanvasMove);
+      fcanvas.on('mouse:up', onCanvasUp);
+
+      suppressHistory = true;
       undoStack = [];
       redoStack = [];
+      suppressHistory = false;
       dirty = false;
       stepCounter = 1;
-      dims = { w: c.width, h: c.height };
+
+      applyToolMode();
+      fitZoom();
+      fcanvas.requestRenderAll();
       sync();
     } catch (err) {
       toast(`Could not open the editor: ${err}`, 'error');
@@ -113,586 +204,661 @@
     }
   }
 
-  function point(e: PointerEvent) {
-    const c = canvas!;
-    const rect = c.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (c.width / rect.width),
-      y: (e.clientY - rect.top) * (c.height / rect.height),
-    };
+  function bgElement(): HTMLImageElement | HTMLCanvasElement | null {
+    const bg = fcanvas?.backgroundImage;
+    if (bg instanceof FabricImage) {
+      const el = bg.getElement() as unknown;
+      if (el instanceof HTMLImageElement || el instanceof HTMLCanvasElement) return el;
+    }
+    return null;
   }
 
-  function commit() {
-    if (!base) return;
-    undoStack.push(base);
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack = [];
-    base = null;
-    dirty = true;
-    sync();
+  // -------------------------------------------------------------------------
+  // Zoom
+  // -------------------------------------------------------------------------
+
+  function applyZoom(z: number, label: string) {
+    if (!fcanvas) return;
+    zoom = z;
+    zoomLabel = label;
+    fcanvas.setZoom(z);
+    fcanvas.setDimensions(
+      { width: dims.w * z, height: dims.h * z },
+      { cssOnly: true },
+    );
+    fcanvas.requestRenderAll();
   }
 
-  function onDown(e: PointerEvent) {
-    if (loading || saving || !canvas) return;
-    const context = ctx();
-    if (!context) return;
-    const p = point(e);
+  function fitZoom() {
+    if (!fcanvas || !stageEl || dims.w === 0) return;
+    const rect = stageEl.getBoundingClientRect();
+    const availW = Math.max(200, rect.width - 48);
+    const availH = Math.max(200, rect.height - 48);
+    const z = Math.min(1, availW / dims.w, availH / dims.h);
+    applyZoom(z, z >= 1 ? '100%' : `${Math.round(z * 100)}%`);
+  }
 
-    drawing = true;
-    startX = p.x;
-    startY = p.y;
-    base = context.getImageData(0, 0, canvas.width, canvas.height);
-    canvas.setPointerCapture(e.pointerId);
+  function zoomIn() {
+    const z = Math.min(4, +(zoom + (zoom < 1 ? 0.25 : 0.5)).toFixed(2));
+    applyZoom(z, `${Math.round(z * 100)}%`);
+  }
 
+  function zoomOut() {
+    const z = Math.max(0.1, +(zoom - (zoom <= 1 ? 0.25 : 0.5)).toFixed(2));
+    applyZoom(z, `${Math.round(z * 100)}%`);
+  }
+
+  function zoomActual() {
+    applyZoom(1, '100%');
+  }
+
+  // -------------------------------------------------------------------------
+  // Tool mode (selection vs free drawing)
+  // -------------------------------------------------------------------------
+
+  function applyToolMode() {
+    if (!fcanvas) return;
     if (tool === 'pen') {
-      context.beginPath();
-      context.moveTo(p.x, p.y);
-      context.strokeStyle = color;
-      context.lineWidth = strokeWidth;
-      context.lineCap = 'round';
-      context.lineJoin = 'round';
+      fcanvas.isDrawingMode = true;
+      const brush = new PencilBrush(fcanvas);
+      brush.color = color;
+      brush.width = strokeWidth;
+      fcanvas.freeDrawingBrush = brush;
+      fcanvas.selection = false;
+      fcanvas.discardActiveObject();
+    } else {
+      fcanvas.isDrawingMode = false;
+      fcanvas.selection = tool === 'select';
+      if (tool !== 'select') fcanvas.discardActiveObject();
     }
+    fcanvas.requestRenderAll();
   }
 
-  function onMove(e: PointerEvent) {
-    if (!drawing || !canvas) return;
-    const context = ctx();
-    if (!context) return;
-    const p = point(e);
-
-    if (tool === 'pen') {
-      context.lineTo(p.x, p.y);
-      context.stroke();
-      return;
-    }
-
-    if (base) context.putImageData(base, 0, 0);
-    drawPreview(context, p.x, p.y);
+  function selectTool(id: Tool) {
+    tool = id;
+    applyToolMode();
   }
 
-  function onUp(e: PointerEvent) {
-    if (!drawing || !canvas) return;
-    const context = ctx();
-    if (!context) return;
-    const p = point(e);
-    drawing = false;
-    try {
-      canvas.releasePointerCapture(e.pointerId);
-    } catch {
-      /* pointer already released */
-    }
-
-    if (tool === 'pen') {
-      commit();
-      return;
-    }
-
-    if (base) context.putImageData(base, 0, 0);
-
-    switch (tool) {
-      case 'rect':
-      case 'ellipse':
-      case 'arrow':
-      case 'line':
-      case 'pixelate':
-      case 'blur':
-      case 'highlight':
-      case 'step':
-      case 'balloon':
-      case 'magnify':
-      case 'spotlight':
-      case 'cutout':
-        drawPreview(context, p.x, p.y);
-        commit();
-        break;
-      case 'cursor':
-        placeCursor(context, p.x, p.y);
-        commit();
-        break;
-      case 'text':
-        if (!text.trim()) {
-          toast('Type some text first', 'info');
-          base = null;
-          break;
-        }
-        drawText(context, p.x, p.y);
-        commit();
-        break;
-      case 'crop':
-        applyCrop(context, p.x, p.y);
-        break;
-    }
-
-    // Advance the step counter only once the shape has actually been placed.
-    if (tool === 'step') stepCounter++;
+  function dashFor(): number[] | null {
+    if (lineStyle === 'dashed') return [strokeWidth * 3, strokeWidth * 2];
+    if (lineStyle === 'dotted') return [Math.max(1, strokeWidth * 0.5), strokeWidth * 2];
+    return null;
   }
 
-  function drawPreview(context: CanvasRenderingContext2D, x: number, y: number) {
-    const x0 = Math.min(startX, x);
-    const y0 = Math.min(startY, y);
-    const w = Math.abs(x - startX);
-    const h = Math.abs(y - startY);
+  // -------------------------------------------------------------------------
+  // Shape factories (scene coordinates)
+  // -------------------------------------------------------------------------
 
-    context.lineWidth = strokeWidth;
-    context.strokeStyle = color;
-    context.fillStyle = color;
-
-    context.globalAlpha = opacity / 100;
-    // Reset any dash left over from a previous (line/pen) stroke.
-    context.setLineDash([]);
-
-    switch (tool) {
-      case 'rect':
-        context.beginPath();
-        context.rect(x0, y0, w, h);
-        if (shapeFill) {
-          context.fillStyle = color;
-          context.fill();
-        }
-        context.stroke();
-        break;
-      case 'ellipse':
-        context.beginPath();
-        context.ellipse(x0 + w / 2, y0 + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-        if (shapeFill) {
-          context.fillStyle = color;
-          context.fill();
-        }
-        context.stroke();
-        break;
-      case 'arrow':
-        setLineStyle(context);
-        drawArrow(context, startX, startY, x, y, arrowStart, arrowEnd);
-        break;
-      case 'line':
-        setLineStyle(context);
-        context.beginPath();
-        context.moveTo(startX, startY);
-        context.lineTo(x, y);
-        context.stroke();
-        break;
-      case 'pen':
-        context.setLineDash([]);
-        break;
-      case 'pixelate':
-        applyPixelate(context, startX, startY, x, y);
-        break;
-      case 'blur':
-        applyBlur(context, startX, startY, x, y);
-        break;
-      case 'highlight':
-        context.fillStyle = color;
-        context.fillRect(x0, y0, w, h);
-        break;
-      case 'step': {
-        const cx = x0 + w / 2;
-        const cy = y0 + h / 2;
-        const r = Math.max(12, Math.min(w, h) / 2);
-        context.beginPath();
-        context.arc(cx, cy, r, 0, Math.PI * 2);
-        context.fillStyle = color;
-        context.fill();
-        context.fillStyle = '#ffffff';
-        context.font = `700 ${r}px ${fontFamily}, sans-serif`;
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(String(stepCounter), cx, cy + 1);
-        break;
-      }
-      case 'balloon':
-        drawBalloon(context, x0, y0, w, h, balloonText, color);
-        break;
-      case 'magnify':
-        drawMagnifier(context, x0, y0, w, h, magnifyZoom);
-        break;
-      case 'spotlight':
-        drawSpotlight(context, x0, y0, w, h);
-        break;
-      case 'cutout':
-        applyCutout(context, x0, y0, w, h);
-        break;
-      case 'crop':
-        drawCropOverlay(context, x0, y0, w, h);
-        break;
-    }
-
-    context.globalAlpha = 1;
+  function makeRect(x: number, y: number, w: number, h: number): Rect {
+    return new Rect({
+      left: x,
+      top: y,
+      width: Math.max(1, w),
+      height: Math.max(1, h),
+      fill: shapeFill ? color : 'transparent',
+      stroke: color,
+      strokeWidth,
+      strokeUniform: true,
+      opacity: opacity / 100,
+    });
   }
 
-  function setLineStyle(context: CanvasRenderingContext2D) {
-    context.lineWidth = strokeWidth;
-    context.strokeStyle = color;
-    if (lineStyle === 'dashed') context.setLineDash([strokeWidth * 3, strokeWidth * 2]);
-    else if (lineStyle === 'dotted') context.setLineDash([strokeWidth * 0.5, strokeWidth * 2]);
-    else context.setLineDash([]);
+  function makeEllipse(x: number, y: number, w: number, h: number): Ellipse {
+    return new Ellipse({
+      left: x,
+      top: y,
+      rx: Math.max(1, w / 2),
+      ry: Math.max(1, h / 2),
+      fill: shapeFill ? color : 'transparent',
+      stroke: color,
+      strokeWidth,
+      strokeUniform: true,
+      opacity: opacity / 100,
+    });
   }
 
-  function drawArrow(
-    context: CanvasRenderingContext2D,
+  function makeLine(x0: number, y0: number, x1: number, y1: number): Line {
+    return new Line([x0, y0, x1, y1], {
+      stroke: color,
+      strokeWidth,
+      strokeUniform: true,
+      strokeDashArray: dashFor() ?? undefined,
+      strokeLineCap: 'round',
+      opacity: opacity / 100,
+    });
+  }
+
+  function arrowPathString(
     x0: number,
     y0: number,
     x1: number,
     y1: number,
-    start: boolean,
-    end: boolean,
-  ) {
-    const head = Math.max(10, strokeWidth * 3.5);
-    const angle = Math.atan2(y1 - y0, x1 - x0);
+    withStart: boolean,
+    withEnd: boolean,
+  ): string {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const px = -uy;
+    const py = ux;
+    const hw = strokeWidth / 2;
+    const headLen = Math.max(10, strokeWidth * 3.5);
+    const headHalf = headLen * 0.45;
 
-    context.lineWidth = strokeWidth;
-    context.strokeStyle = color;
-    context.fillStyle = color;
-    context.lineCap = 'round';
+    const tailX0 = withStart ? x0 + ux * headLen : x0;
+    const tailY0 = withStart ? y0 + uy * headLen : y0;
+    const tailX1 = withEnd ? x1 - ux * headLen : x1;
+    const tailY1 = withEnd ? y1 - uy * headLen : y1;
 
-    context.beginPath();
-    context.moveTo(x0, y0);
-    context.lineTo(x1, y1);
-    context.stroke();
-
-    if (end) {
-      context.beginPath();
-      context.moveTo(x1, y1);
-      context.lineTo(
-        x1 - head * Math.cos(angle - Math.PI / 6),
-        y1 - head * Math.sin(angle - Math.PI / 6),
-      );
-      context.lineTo(
-        x1 - head * Math.cos(angle + Math.PI / 6),
-        y1 - head * Math.sin(angle + Math.PI / 6),
-      );
-      context.closePath();
-      context.fill();
+    const pts: Array<[number, number]> = [];
+    if (withStart) {
+      pts.push([x0, y0]);
+      pts.push([x0 + ux * headLen + px * headHalf, y0 + uy * headLen + py * headHalf]);
+      pts.push([tailX0 + px * hw, tailY0 + py * hw]);
+    } else {
+      pts.push([tailX0 + px * hw, tailY0 + py * hw]);
     }
-
-    if (start) {
-      const startAngle = Math.atan2(y0 - y1, x0 - x1);
-      context.beginPath();
-      context.moveTo(x0, y0);
-      context.lineTo(
-        x0 - head * Math.cos(startAngle - Math.PI / 6),
-        y0 - head * Math.sin(startAngle - Math.PI / 6),
-      );
-      context.lineTo(
-        x0 - head * Math.cos(startAngle + Math.PI / 6),
-        y0 - head * Math.sin(startAngle + Math.PI / 6),
-      );
-      context.closePath();
-      context.fill();
+    if (withEnd) {
+      pts.push([tailX1 + px * hw, tailY1 + py * hw]);
+      pts.push([x1 - ux * headLen + px * headHalf, y1 - uy * headLen + py * headHalf]);
+      pts.push([x1, y1]);
+      pts.push([x1 - ux * headLen - px * headHalf, y1 - uy * headLen - py * headHalf]);
+      pts.push([tailX1 - px * hw, tailY1 - py * hw]);
+    } else {
+      pts.push([tailX1 - px * hw, tailY1 - py * hw]);
     }
-  }
-
-  function drawBalloon(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    text: string,
-    bgColor: string,
-  ) {
-    const padding = 8;
-    const fontSize = Math.max(12, strokeWidth * 3);
-    context.font = `500 ${fontSize}px ${fontFamily}, sans-serif`;
-    const metrics = context.measureText(text || 'Text');
-    const textW = metrics.width;
-    const textH = fontSize;
-    const bw = textW + padding * 2;
-    const bh = textH + padding * 2;
-    const bx = x + w / 2 - bw / 2;
-    const by = y + h / 2 - bh / 2;
-    const tailH = 16;
-    const tailW = 12;
-
-    context.fillStyle = bgColor;
-    context.strokeStyle = bgColor;
-    context.lineWidth = 2;
-
-    // Balloon body
-    const r = 8;
-    context.beginPath();
-    context.moveTo(bx + r, by);
-    context.lineTo(bx + bw - r, by);
-    context.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
-    context.lineTo(bx + bw, by + bh - r);
-    context.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
-    context.lineTo(bx + r, by + bh);
-    context.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
-    context.lineTo(bx, by + r);
-    context.quadraticCurveTo(bx, by, bx + r, by);
-    context.closePath();
-    context.fill();
-
-    // Tail
-    const tailX = bx + bw / 2;
-    const tailY = by + bh;
-    context.beginPath();
-    context.moveTo(tailX - tailW / 2, tailY);
-    context.lineTo(tailX + tailW / 2, tailY);
-    context.lineTo(tailX, tailY + tailH);
-    context.closePath();
-    context.fill();
-
-    // Text
-    context.fillStyle = '#ffffff';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(text || 'Text', bx + bw / 2, by + bh / 2 + 1);
-  }
-
-  function drawMagnifier(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    zoom: number,
-  ) {
-    const c = canvas!;
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const r = Math.min(w, h) / 2;
-
-    // Draw magnified content
-    const srcR = r / zoom;
-    context.save();
-    context.beginPath();
-    context.arc(cx, cy, r, 0, Math.PI * 2);
-    context.clip();
-    context.drawImage(c, cx - srcR, cy - srcR, srcR * 2, srcR * 2, cx - r, cy - r, r * 2, r * 2);
-    context.restore();
-
-    // Border
-    context.beginPath();
-    context.arc(cx, cy, r, 0, Math.PI * 2);
-    context.strokeStyle = color;
-    context.lineWidth = strokeWidth;
-    context.stroke();
-
-    // Handle
-    const handleLen = r * 0.8;
-    const handleAngle = Math.PI / 4;
-    const hx = cx + r * Math.cos(handleAngle);
-    const hy = cy + r * Math.sin(handleAngle);
-    context.beginPath();
-    context.moveTo(hx, hy);
-    context.lineTo(hx + handleLen * Math.cos(handleAngle), hy + handleLen * Math.sin(handleAngle));
-    context.stroke();
-  }
-
-  function drawSpotlight(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ) {
-    const c = canvas!;
-    context.save();
-    context.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    context.beginPath();
-    context.rect(0, 0, c.width, c.height);
-    context.rect(x, y, w, h);
-    context.fill('evenodd');
-    context.restore();
-
-    // Border around spotlight
-    context.strokeStyle = color;
-    context.lineWidth = Math.max(2, strokeWidth);
-    context.strokeRect(x, y, w, h);
-  }
-
-  function applyCutout(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ) {
-    context.save();
-    context.clearRect(x, y, w, h);
-    context.restore();
-  }
-
-  function placeCursor(context: CanvasRenderingContext2D, x: number, y: number) {
-    const size = Math.max(16, strokeWidth * 4);
-    context.fillStyle = '#ffffff';
-    context.strokeStyle = '#000000';
-    context.lineWidth = 2;
-
-    context.beginPath();
-    context.moveTo(x, y);
-    context.lineTo(x, y + size);
-    context.lineTo(x + size * 0.3, y + size * 0.75);
-    context.lineTo(x + size * 0.5, y + size * 0.9);
-    context.lineTo(x + size * 0.65, y + size * 0.7);
-    context.lineTo(x + size * 0.9, y + size * 0.7);
-    context.lineTo(x + size * 0.75, y + size * 0.5);
-    context.lineTo(x + size, y + size * 0.3);
-    context.closePath();
-    context.fill();
-    context.stroke();
-  }
-
-  function drawText(context: CanvasRenderingContext2D, x: number, y: number) {
-    const value = text.trim();
-    if (!value) {
-      toast('Type some text first', 'info');
-      return;
+    if (withStart) {
+      pts.push([tailX0 - px * hw, tailY0 - py * hw]);
+      pts.push([x0 + ux * headLen - px * headHalf, y0 + uy * headLen - py * headHalf]);
+    } else {
+      pts.push([tailX0 - px * hw, tailY0 - py * hw]);
     }
-    const size = Math.max(16, strokeWidth * 6);
-    context.font = `600 ${size}px system-ui, -apple-system, sans-serif`;
-    context.textBaseline = 'top';
-    context.lineWidth = Math.max(2, size / 8);
-    context.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-    context.fillStyle = color;
-    context.strokeText(value, x, y);
-    context.fillText(value, x, y);
+    const f = (n: number) => +n.toFixed(2);
+    return `M ${f(pts[0][0])} ${f(pts[0][1])} ` + pts.slice(1).map(([a, b]) => `L ${f(a)} ${f(b)}`).join(' ') + ' Z';
   }
 
-  function region(x0: number, y0: number, x1: number, y1: number) {
-    const c = canvas!;
+  function makeArrow(x0: number, y0: number, x1: number, y1: number): Path {
+    return new Path(arrowPathString(x0, y0, x1, y1, arrowStart, arrowEnd), {
+      fill: color,
+      stroke: color,
+      strokeWidth: 1,
+      opacity: opacity / 100,
+    });
+  }
+
+  function makeHighlight(x: number, y: number, w: number, h: number): Rect {
+    return new Rect({
+      left: x,
+      top: y,
+      width: Math.max(1, w),
+      height: Math.max(1, h),
+      fill: color,
+      stroke: 'transparent',
+      opacity: (opacity / 100) * 0.45,
+    });
+  }
+
+  function makeTextAt(x: number, y: number): Textbox | null {
+    const value = text.trim() || 'Text';
+    const tb = new Textbox(value, {
+      left: x,
+      top: y,
+      fontFamily,
+      fontSize,
+      fill: color,
+      fontWeight: 600,
+      opacity: opacity / 100,
+      editable: true,
+      width: Math.max(60, value.length * fontSize * 0.65),
+    });
+    return tb;
+  }
+
+  function makeStepAt(x: number, y: number): Group {
+    const r = Math.max(14, strokeWidth * 4);
+    const circle = new Circle({
+      radius: r,
+      fill: color,
+      stroke: color,
+      originX: 'center',
+      originY: 'center',
+    });
+    const label = new Textbox(String(stepCounter), {
+      fontFamily,
+      fontSize: r * 1.05,
+      fontWeight: 700,
+      fill: '#ffffff',
+      textAlign: 'center',
+      originX: 'center',
+      originY: 'center',
+      editable: false,
+      width: r * 2,
+    });
+    return new Group([circle, label], { left: x, top: y, opacity: opacity / 100 });
+  }
+
+  function makeBalloonAt(x: number, y: number): Group {
+    const value = balloonText.trim() || 'Text';
+    const fontPx = Math.max(14, strokeWidth * 3.5);
+    const pad = 10;
+    const approxW = value.length * fontPx * 0.6 + pad * 2;
+    const approxH = fontPx + pad * 2;
+    const body = new Rect({
+      width: approxW,
+      height: approxH,
+      rx: 9,
+      ry: 9,
+      fill: color,
+      stroke: color,
+      originX: 'center',
+      originY: 'center',
+    });
+    const tail = new Triangle({
+      width: 18,
+      height: 20,
+      fill: color,
+      originX: 'center',
+      originY: 'top',
+      top: approxH / 2 - 2,
+    });
+    const label = new Textbox(value, {
+      fontFamily,
+      fontSize: fontPx,
+      fill: '#ffffff',
+      textAlign: 'center',
+      originX: 'center',
+      originY: 'center',
+      editable: true,
+      width: approxW - pad,
+    });
+    return new Group([body, tail, label], { left: x, top: y, opacity: opacity / 100 });
+  }
+
+  function makeCursorAt(x: number, y: number): Path {
+    const s = Math.max(16, strokeWidth * 4) / 24;
+    const d =
+      'M 0 0 L 0 20 L 5.5 15.5 L 8 20.5 L 10.5 19.5 L 8 14.5 L 12.5 14.5 Z';
+    const p = new Path(d, {
+      left: x,
+      top: y,
+      fill: '#ffffff',
+      stroke: '#000000',
+      strokeWidth: 1.5 / s,
+      scaleX: s,
+      scaleY: s,
+      strokeUniform: true,
+    });
+    return p;
+  }
+
+  // -------------------------------------------------------------------------
+  // Region effects (pixelate / blur / magnify / spotlight / cutout / crop)
+  // -------------------------------------------------------------------------
+
+  function cropSource(x: number, y: number, w: number, h: number): HTMLCanvasElement | null {
+    const el = bgElement();
+    if (!el || !fcanvas) return null;
+    const W = fcanvas.getWidth();
+    const H = fcanvas.getHeight();
+    const cx = Math.max(0, Math.min(x, W));
+    const cy = Math.max(0, Math.min(y, H));
+    const cw = Math.max(1, Math.min(w, W - cx));
+    const ch = Math.max(1, Math.min(h, H - cy));
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.floor(cw);
+    tmp.height = Math.floor(ch);
+    const tctx = tmp.getContext('2d')!;
+    const sw = el instanceof HTMLImageElement ? el.naturalWidth || el.width : el.width;
+    const sh = el instanceof HTMLImageElement ? el.naturalHeight || el.height : el.height;
+    tctx.drawImage(el, (cx / W) * sw, (cy / H) * sh, (cw / W) * sw, (ch / H) * sh, 0, 0, tmp.width, tmp.height);
+    return tmp;
+  }
+
+  async function addImageObject(
+    source: HTMLCanvasElement,
+    left: number,
+    top: number,
+    extra?: (img: FabricImage) => void,
+  ) {
+    if (!fcanvas) return;
+    const img = await FabricImage.fromURL(source.toDataURL());
+    img.set({ left, top, selectable: true, evented: true });
+    extra?.(img);
+    fcanvas.add(img);
+    fcanvas.setActiveObject(img);
+    fcanvas.requestRenderAll();
+  }
+
+  async function applyPixelate(x0: number, y0: number, x1: number, y1: number) {
+    const x = Math.min(x0, x1);
+    const y = Math.min(y0, y1);
+    const w = Math.abs(x1 - x0);
+    const h = Math.abs(y1 - y0);
+    if (w < MIN_SIZE || h < MIN_SIZE) return;
+    const src = cropSource(x, y, w, h);
+    if (!src) return;
+    const block = Math.max(2, Math.round(strokeWidth * 1.2));
+    await addImageObject(src, x, y, (img) => {
+      img.filters = [new filters.Pixelate({ blocksize: block })];
+      img.applyFilters();
+    });
+  }
+
+  async function applyBlur(x0: number, y0: number, x1: number, y1: number) {
+    const x = Math.min(x0, x1);
+    const y = Math.min(y0, y1);
+    const w = Math.abs(x1 - x0);
+    const h = Math.abs(y1 - y0);
+    if (w < MIN_SIZE || h < MIN_SIZE) return;
+    const src = cropSource(x, y, w, h);
+    if (!src) return;
+    const radius = Math.max(1, Math.round(strokeWidth));
+    await addImageObject(src, x, y, (img) => {
+      img.filters = [new filters.Blur({ blur: radius / 20 })];
+      img.applyFilters();
+    });
+  }
+
+  async function applyMagnify(x0: number, y0: number, x1: number, y1: number) {
+    if (!fcanvas) return;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const r = Math.max(24, Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 2);
+    const srcR = r / magnifyZoom;
+    const src = cropSource(cx - srcR, cy - srcR, srcR * 2, srcR * 2);
+    if (!src) return;
+    // Bake the circular clip into the bitmap so no fabric clipPath math is needed.
+    const out = document.createElement('canvas');
+    out.width = out.height = Math.ceil(srcR * 2);
+    const octx = out.getContext('2d')!;
+    octx.beginPath();
+    octx.arc(srcR, srcR, srcR, 0, Math.PI * 2);
+    octx.clip();
+    octx.drawImage(src, 0, 0);
+    const scale = r / srcR;
+    await addImageObject(out, cx - r, cy - r, (img) => {
+      img.set({ scaleX: scale, scaleY: scale });
+    });
+    const ring = new Circle({
+      left: cx - r,
+      top: cy - r,
+      radius: r,
+      fill: 'transparent',
+      stroke: color,
+      strokeWidth,
+      strokeUniform: true,
+      selectable: true,
+      evented: true,
+    });
+    const handleLen = r * 0.7;
+    const ha = Math.PI / 4;
+    const handle = new Line(
+      [cx + r * Math.cos(ha), cy + r * Math.sin(ha), cx + (r + handleLen) * Math.cos(ha), cy + (r + handleLen) * Math.sin(ha)],
+      { stroke: color, strokeWidth: Math.max(3, strokeWidth), strokeUniform: true, strokeLineCap: 'round' },
+    );
+    fcanvas.add(ring, handle);
+    fcanvas.requestRenderAll();
+  }
+
+  function applySpotlight(x0: number, y0: number, x1: number, y1: number) {
+    if (!fcanvas) return;
+    const W = fcanvas.getWidth();
+    const H = fcanvas.getHeight();
+    const x = Math.min(x0, x1);
+    const y = Math.min(y0, y1);
+    const w = Math.abs(x1 - x0);
+    const h = Math.abs(y1 - y0);
+    if (w < MIN_SIZE || h < MIN_SIZE) return;
+    const shade = 'rgba(0, 0, 0, 0.6)';
+    const parts = [
+      new Rect({ left: 0, top: 0, width: W, height: y, fill: shade }),
+      new Rect({ left: 0, top: y + h, width: W, height: H - y - h, fill: shade }),
+      new Rect({ left: 0, top: y, width: x, height: h, fill: shade }),
+      new Rect({ left: x + w, top: y, width: W - x - w, height: h, fill: shade }),
+      new Rect({
+        left: x,
+        top: y,
+        width: w,
+        height: h,
+        fill: 'transparent',
+        stroke: color,
+        strokeWidth: Math.max(2, strokeWidth),
+        strokeUniform: true,
+      }),
+    ];
+    const group = new Group(parts, { selectable: true, evented: true });
+    fcanvas.add(group);
+    fcanvas.setActiveObject(group);
+    fcanvas.requestRenderAll();
+  }
+
+  async function applyCutout(x0: number, y0: number, x1: number, y1: number) {
+    if (!fcanvas) return;
+    const W = fcanvas.getWidth();
+    const H = fcanvas.getHeight();
+    const el = bgElement();
+    if (!el) return;
+    const x = Math.max(0, Math.min(x0, x1));
+    const y = Math.max(0, Math.min(y0, y1));
+    const w = Math.min(W - x, Math.abs(x1 - x0));
+    const h = Math.min(H - y, Math.abs(y1 - y0));
+    if (w < MIN_SIZE || h < MIN_SIZE) return;
+    const tmp = document.createElement('canvas');
+    tmp.width = W;
+    tmp.height = H;
+    const tctx = tmp.getContext('2d')!;
+    tctx.drawImage(el, 0, 0, W, H);
+    tctx.clearRect(x, y, w, h);
+    const img = await FabricImage.fromURL(tmp.toDataURL());
+    img.set({ selectable: false, evented: false });
+    suppressHistory = true;
+    fcanvas.backgroundImage = img;
+    suppressHistory = false;
+    fcanvas.requestRenderAll();
+    pushHistory();
+  }
+
+  async function applyCropSel(x0: number, y0: number, x1: number, y1: number) {
+    if (!fcanvas) return;
+    const W = fcanvas.getWidth();
+    const H = fcanvas.getHeight();
     const x = Math.max(0, Math.floor(Math.min(x0, x1)));
     const y = Math.max(0, Math.floor(Math.min(y0, y1)));
-    const w = Math.min(c.width - x, Math.floor(Math.abs(x1 - x0)));
-    const h = Math.min(c.height - y, Math.floor(Math.abs(y1 - y0)));
-    return { x, y, w, h };
+    const w = Math.min(W - x, Math.floor(Math.abs(x1 - x0)));
+    const h = Math.min(H - y, Math.floor(Math.abs(y1 - y0)));
+    if (w < MIN_SIZE || h < MIN_SIZE) return;
+    const src = cropSource(x, y, w, h);
+    if (!src) return;
+    suppressHistory = true;
+    try {
+      const img = await FabricImage.fromURL(src.toDataURL());
+      img.set({ selectable: false, evented: false });
+      fcanvas.backgroundImage = img;
+      fcanvas.setDimensions({ width: w, height: h });
+      for (const obj of fcanvas.getObjects()) {
+        obj.set({ left: (obj.left ?? 0) - x, top: (obj.top ?? 0) - y });
+        obj.setCoords();
+      }
+      syncDims();
+      fitZoom();
+    } finally {
+      suppressHistory = false;
+    }
+    fcanvas.requestRenderAll();
+    pushHistory();
   }
 
-  function applyPixelate(
-    context: CanvasRenderingContext2D,
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-  ) {
-    const { x, y, w, h } = region(x0, y0, x1, y1);
-    if (w < 2 || h < 2) return;
+  // -------------------------------------------------------------------------
+  // Mouse interaction
+  // -------------------------------------------------------------------------
 
-    // Smaller block size for finer pixelation (ShareX-like).
-    const block = Math.max(2, Math.round(strokeWidth * 1.2));
-    const small = document.createElement('canvas');
-    small.width = Math.max(1, Math.floor(w / block));
-    small.height = Math.max(1, Math.floor(h / block));
-    const sctx = small.getContext('2d')!;
-    sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(canvas!, x, y, w, h, 0, 0, small.width, small.height);
+  function onCanvasDown(opt: { e: TPointerEvent }) {
+    if (!fcanvas || loading || saving) return;
+    if (tool === 'select' || tool === 'pen') return;
+    const p = fcanvas.getScenePoint(opt.e);
+    dragStart = { x: p.x, y: p.y };
 
-    context.save();
-    context.globalAlpha = 1;
-    context.imageSmoothingEnabled = false;
-    context.drawImage(small, 0, 0, small.width, small.height, x, y, w, h);
-    context.restore();
-  }
-
-  function applyBlur(
-    context: CanvasRenderingContext2D,
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-  ) {
-    const { x, y, w, h } = region(x0, y0, x1, y1);
-    if (w < 2 || h < 2) return;
-
-    const radius = Math.max(2, strokeWidth);
-    const temp = document.createElement('canvas');
-    temp.width = w;
-    temp.height = h;
-    const tctx = temp.getContext('2d')!;
-    tctx.filter = `blur(${radius}px)`;
-    tctx.drawImage(canvas!, x, y, w, h, 0, 0, w, h);
-
-    context.save();
-    context.globalAlpha = 1;
-    context.clearRect(x, y, w, h);
-    context.drawImage(temp, x, y);
-    context.restore();
-  }
-
-  function drawCropOverlay(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ) {
-    const c = canvas!;
-    context.save();
-    context.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    context.beginPath();
-    context.rect(0, 0, c.width, c.height);
-    context.rect(x, y, w, h);
-    context.fill('evenodd');
-    context.strokeStyle = color;
-    context.lineWidth = Math.max(2, strokeWidth);
-    context.strokeRect(x, y, w, h);
-    context.restore();
-  }
-
-  function applyCrop(context: CanvasRenderingContext2D, x1: number, y1: number) {
-    const { x, y, w, h } = region(startX, startY, x1, y1);
-    if (w < MIN_CROP || h < MIN_CROP) {
-      base = null;
+    if (tool === 'text') {
+      const tb = makeTextAt(p.x, p.y);
+      if (tb) {
+        fcanvas.add(tb);
+        fcanvas.setActiveObject(tb);
+        tb.enterEditing();
+        tb.selectAll();
+      }
+      dragStart = null;
+      return;
+    }
+    if (tool === 'step') {
+      const g = makeStepAt(p.x, p.y);
+      fcanvas.add(g);
+      fcanvas.setActiveObject(g);
+      stepCounter++;
+      dragStart = null;
+      return;
+    }
+    if (tool === 'balloon') {
+      const g = makeBalloonAt(p.x, p.y);
+      fcanvas.add(g);
+      fcanvas.setActiveObject(g);
+      dragStart = null;
+      return;
+    }
+    if (tool === 'cursor') {
+      fcanvas.add(makeCursorAt(p.x, p.y));
+      dragStart = null;
       return;
     }
 
-    const cropped = context.getImageData(x, y, w, h);
-    canvas!.width = w;
-    canvas!.height = h;
-    ctx()!.putImageData(cropped, 0, 0);
-    commit();
+    // Drag tools: create a live object and resize it on move.
+    let obj: FabricObject | null = null;
+    if (tool === 'rect') obj = makeRect(p.x, p.y, 1, 1);
+    else if (tool === 'ellipse') obj = makeEllipse(p.x, p.y, 1, 1);
+    else if (tool === 'highlight') obj = makeHighlight(p.x, p.y, 1, 1);
+    else if (tool === 'line') obj = makeLine(p.x, p.y, p.x + 1, p.y + 1);
+    else if (tool === 'arrow') obj = makeArrow(p.x, p.y, p.x + 1, p.y + 1);
+    if (obj) {
+      suppressHistory = true;
+      dragObj = obj;
+      fcanvas.add(obj);
+      suppressHistory = false;
+    }
   }
 
-  function undo() {
-    if (!canvas || undoStack.length === 0) return;
-    const context = ctx();
-    if (!context) return;
-    redoStack.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    const prev = undoStack.pop()!;
-    if (canvas.width !== prev.width || canvas.height !== prev.height) {
-      canvas.width = prev.width;
-      canvas.height = prev.height;
+  function onCanvasMove(opt: { e: TPointerEvent }) {
+    if (!fcanvas || !dragObj || !dragStart) return;
+    const p = fcanvas.getScenePoint(opt.e);
+    const x = Math.min(dragStart.x, p.x);
+    const y = Math.min(dragStart.y, p.y);
+    const w = Math.abs(p.x - dragStart.x);
+    const h = Math.abs(p.y - dragStart.y);
+    if (dragObj instanceof Rect) {
+      dragObj.set({ left: x, top: y, width: Math.max(1, w), height: Math.max(1, h) });
+    } else if (dragObj instanceof Ellipse) {
+      dragObj.set({ left: x, top: y, rx: Math.max(1, w / 2), ry: Math.max(1, h / 2) });
+    } else if (dragObj instanceof Line) {
+      dragObj.set({ x1: dragStart.x, y1: dragStart.y, x2: p.x, y2: p.y });
+    } else if (dragObj instanceof Path) {
+      const next = makeArrow(dragStart.x, dragStart.y, p.x, p.y);
+      const idx = fcanvas.getObjects().indexOf(dragObj);
+      suppressHistory = true;
+      fcanvas.remove(dragObj);
+      suppressHistory = false;
+      dragObj = next;
+      suppressHistory = true;
+      if (idx >= 0) fcanvas.insertAt(idx, next);
+      else fcanvas.add(next);
+      suppressHistory = false;
     }
-    ctx()!.putImageData(prev, 0, 0);
-    dirty = true;
-    sync();
+    dragObj.setCoords();
+    fcanvas.requestRenderAll();
   }
 
-  function redo() {
-    if (!canvas || redoStack.length === 0) return;
-    const context = ctx();
-    if (!context) return;
-    undoStack.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    const next = redoStack.pop()!;
-    if (canvas.width !== next.width || canvas.height !== next.height) {
-      canvas.width = next.width;
-      canvas.height = next.height;
+  async function onCanvasUp(opt: { e: TPointerEvent }) {
+    if (!fcanvas) return;
+    if (tool === 'select' || tool === 'pen') return;
+    const p = fcanvas.getScenePoint(opt.e);
+
+    if (dragObj && dragStart) {
+      const w = Math.abs(p.x - dragStart.x);
+      const h = Math.abs(p.y - dragStart.y);
+      const done = dragObj;
+      dragObj = null;
+      dragStart = null;
+      if (w < MIN_SIZE && h < MIN_SIZE && (done instanceof Rect || done instanceof Ellipse)) {
+        suppressHistory = true;
+        fcanvas.remove(done);
+        suppressHistory = false;
+        fcanvas.requestRenderAll();
+        return;
+      }
+      fcanvas.setActiveObject(done);
+      pushHistory();
+      return;
     }
-    ctx()!.putImageData(next, 0, 0);
-    dirty = true;
-    sync();
+
+    if (!dragStart) return;
+    const sx = dragStart.x;
+    const sy = dragStart.y;
+    dragStart = null;
+    switch (tool) {
+      case 'pixelate':
+        await applyPixelate(sx, sy, p.x, p.y);
+        break;
+      case 'blur':
+        await applyBlur(sx, sy, p.x, p.y);
+        break;
+      case 'magnify':
+        await applyMagnify(sx, sy, p.x, p.y);
+        break;
+      case 'spotlight':
+        applySpotlight(sx, sy, p.x, p.y);
+        break;
+      case 'cutout':
+        await applyCutout(sx, sy, p.x, p.y);
+        break;
+      case 'crop':
+        await applyCropSel(sx, sy, p.x, p.y);
+        break;
+    }
   }
 
-  function revert() {
-    if (!canvas || !original) return;
-    const context = ctx();
-    if (!context) return;
-    undoStack.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack = [];
-    if (canvas.width !== original.width || canvas.height !== original.height) {
-      canvas.width = original.width;
-      canvas.height = original.height;
-    }
-    ctx()!.putImageData(original, 0, 0);
-    dirty = true;
-    sync();
+  function deleteSelection() {
+    if (!fcanvas) return;
+    const active = fcanvas.getActiveObjects();
+    if (active.length === 0) return;
+    fcanvas.discardActiveObject();
+    fcanvas.remove(...active);
+    fcanvas.requestRenderAll();
+  }
+
+  // -------------------------------------------------------------------------
+  // Export / save / revert
+  // -------------------------------------------------------------------------
+
+  function exportDataUrl(): string | null {
+    if (!fcanvas) return null;
+    const prevZoom = zoom;
+    const prevLabel = zoomLabel;
+    const prevT = fcanvas.viewportTransform ? ([...fcanvas.viewportTransform] as TMat2D) : undefined;
+    fcanvas.setZoom(1);
+    fcanvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    fcanvas.setDimensions({ width: dims.w, height: dims.h }, { cssOnly: true });
+    fcanvas.discardActiveObject();
+    fcanvas.requestRenderAll();
+    const data = fcanvas.toDataURL({ format: 'png', multiplier: 1 });
+    if (prevT) fcanvas.setViewportTransform(prevT);
+    applyZoom(prevZoom, prevLabel);
+    return data;
   }
 
   async function copy() {
-    if (!canvas) return;
+    const data = exportDataUrl();
+    if (!data) return;
     try {
-      await api.copyEdits(canvas.toDataURL('image/png'));
+      await api.copyEdits(data);
       toast('Copied annotated image to clipboard', 'success');
     } catch (err) {
       toast(String(err), 'error');
@@ -700,10 +866,11 @@
   }
 
   async function save() {
-    if (!canvas || !filePath || saving) return;
+    if (!fcanvas || !filePath || saving) return;
     saving = true;
     try {
-      const data = canvas.toDataURL('image/png');
+      const data = exportDataUrl();
+      if (!data) throw new Error('could not render the image');
       await api.applyEdits(filePath, data);
       toast('Saved', 'success');
       close();
@@ -714,31 +881,73 @@
     }
   }
 
+  async function revert() {
+    if (!fcanvas || !originalDataUrl) return;
+    suppressHistory = true;
+    try {
+      const bg = await FabricImage.fromURL(originalDataUrl);
+      bg.set({ selectable: false, evented: false });
+      for (const obj of [...fcanvas.getObjects()]) fcanvas.remove(obj);
+      fcanvas.backgroundImage = bg;
+      const w = bg.width || dims.w;
+      const h = bg.height || dims.h;
+      fcanvas.setDimensions({ width: w, height: h });
+      syncDims();
+      fitZoom();
+    } finally {
+      suppressHistory = false;
+    }
+    dirty = true;
+    pushHistory();
+    fcanvas.requestRenderAll();
+  }
+
   function close() {
-    const win = getCurrentWindow();
-    win.close();
+    getCurrentWindow().close();
   }
 
   function onKey(e: KeyboardEvent) {
     const target = e.target as HTMLElement | null;
-    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+    const typing =
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable);
     const mod = e.ctrlKey || e.metaKey;
 
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
-      undo();
+      void undo();
     } else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
       e.preventDefault();
-      redo();
-    } else if (e.key === 'Escape' && !typing) {
-      close();
+      void redo();
+    } else if (mod && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      void save();
+    } else if (mod && e.key.toLowerCase() === 'c' && !typing) {
+      e.preventDefault();
+      void copy();
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
+      e.preventDefault();
+      deleteSelection();
+    } else if (e.key.toLowerCase() === 'v' && !typing && !mod) {
+      selectTool('select');
+    } else if (e.key === 'Escape') {
+      if (fcanvas?.getActiveObject() && tool === 'select') fcanvas.discardActiveObject();
+      else if (!typing) close();
     }
   }
 
   onMount(() => {
-    load();
+    void load();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('resize', fitZoom);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', fitZoom);
+      fcanvas?.dispose();
+      fcanvas = null;
+    };
   });
 </script>
 
@@ -747,28 +956,33 @@
     <div class="title-group">
       <h1>Image Editor</h1>
       {#if !loading && dims.w > 0}
-        <p class="sub">{dims.w} × {dims.h}px</p>
+        <p class="sub">{dims.w} × {dims.h}px · objects are selectable — drag to move, corners to resize</p>
       {/if}
     </div>
     <div class="head-actions">
-      <button class="ghost" onclick={undo} disabled={!hasUndo} title="Undo (Ctrl+Z)">
+      <button class="ghost" onclick={() => selectTool('select')} class:active-tool={tool === 'select'} title="Select (V)">Select</button>
+      <button class="ghost" onclick={() => deleteSelection()} title="Delete selection (Del)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Delete
+      </button>
+      <button class="ghost" onclick={() => void undo()} disabled={!hasUndo} title="Undo (Ctrl+Z)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
         Undo
       </button>
-      <button class="ghost" onclick={redo} disabled={!hasRedo} title="Redo (Ctrl+Shift+Z)">
+      <button class="ghost" onclick={() => void redo()} disabled={!hasRedo} title="Redo (Ctrl+Shift+Z)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Redo
       </button>
-      <button class="ghost" onclick={revert} disabled={!dirty || loading} title="Revert to original">
+      <button class="ghost" onclick={() => void revert()} disabled={!dirty || loading} title="Revert to original">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
         Reset
       </button>
       <span class="separator"></span>
-      <button class="ghost" onclick={copy} disabled={loading || saving} title="Copy to clipboard">
+      <button class="ghost" onclick={() => void copy()} disabled={loading || saving} title="Copy to clipboard (Ctrl+C)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Copy
       </button>
-      <button class="primary" onclick={save} disabled={loading || saving} title="Save and close">
+      <button class="primary" onclick={() => void save()} disabled={loading || saving} title="Save and close (Ctrl+S)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         {saving ? 'Saving…' : 'Save & Close'}
       </button>
@@ -788,7 +1002,7 @@
               class="tool-btn"
               class:active={tool === item.id}
               title={item.label}
-              onclick={() => (tool = item.id)}
+              onclick={() => selectTool(item.id)}
             >
               <span class="tool-icon">{item.icon}</span>
             </button>
@@ -798,14 +1012,14 @@
     </aside>
 
     <div class="canvas-area">
-      <div class="stage">
-        <canvas
-          bind:this={canvas}
-          onpointerdown={onDown}
-          onpointermove={onMove}
-          onpointerup={onUp}
-          onpointercancel={onUp}
-        ></canvas>
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick={zoomOut} title="Zoom out">−</button>
+        <button class="zoom-btn zoom-label" onclick={fitZoom} title="Fit to window">{zoomLabel}</button>
+        <button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
+        <button class="zoom-btn" onclick={zoomActual} title="Actual size (100%)">1:1</button>
+      </div>
+      <div class="stage" bind:this={stageEl}>
+        <canvas bind:this={canvasEl}></canvas>
         {#if loading}
           <div class="overlay">Loading image…</div>
         {/if}
@@ -816,29 +1030,29 @@
       <div class="options-section">
         <span class="section-label">Color</span>
         <div class="color-row">
-          <input type="color" bind:value={color} />
+          <input type="color" bind:value={color} onchange={applyToolMode} />
           <span class="color-value">{color}</span>
         </div>
         <div class="preset-colors">
-          <button class="swatch" style="background:#ff3b30" onclick={() => color = '#ff3b30'} title="Red"></button>
-          <button class="swatch" style="background:#ff9500" onclick={() => color = '#ff9500'} title="Orange"></button>
-          <button class="swatch" style="background:#ffcc00" onclick={() => color = '#ffcc00'} title="Yellow"></button>
-          <button class="swatch" style="background:#34c759" onclick={() => color = '#34c759'} title="Green"></button>
-          <button class="swatch" style="background:#007aff" onclick={() => color = '#007aff'} title="Blue"></button>
-          <button class="swatch" style="background:#af52de" onclick={() => color = '#af52de'} title="Purple"></button>
-          <button class="swatch" style="background:#ffffff" onclick={() => color = '#ffffff'} title="White"></button>
-          <button class="swatch" style="background:#000000" onclick={() => color = '#000000'} title="Black"></button>
+          <button class="swatch" style="background:#ff3b30" onclick={() => { color = '#ff3b30'; applyToolMode(); }} title="Red"></button>
+          <button class="swatch" style="background:#ff9500" onclick={() => { color = '#ff9500'; applyToolMode(); }} title="Orange"></button>
+          <button class="swatch" style="background:#ffcc00" onclick={() => { color = '#ffcc00'; applyToolMode(); }} title="Yellow"></button>
+          <button class="swatch" style="background:#34c759" onclick={() => { color = '#34c759'; applyToolMode(); }} title="Green"></button>
+          <button class="swatch" style="background:#007aff" onclick={() => { color = '#007aff'; applyToolMode(); }} title="Blue"></button>
+          <button class="swatch" style="background:#af52de" onclick={() => { color = '#af52de'; applyToolMode(); }} title="Purple"></button>
+          <button class="swatch" style="background:#ffffff" onclick={() => { color = '#ffffff'; applyToolMode(); }} title="White"></button>
+          <button class="swatch" style="background:#000000" onclick={() => { color = '#000000'; applyToolMode(); }} title="Black"></button>
         </div>
       </div>
 
       <div class="options-section">
         <span class="section-label">Size — {strokeWidth}px</span>
-        <input type="range" min="1" max="24" bind:value={strokeWidth} />
+        <input type="range" min="1" max="24" bind:value={strokeWidth} onchange={applyToolMode} />
         <div class="size-presets">
-          <button class="size-preset" class:active={strokeWidth === 2} onclick={() => strokeWidth = 2}>S</button>
-          <button class="size-preset" class:active={strokeWidth === 4} onclick={() => strokeWidth = 4}>M</button>
-          <button class="size-preset" class:active={strokeWidth === 8} onclick={() => strokeWidth = 8}>L</button>
-          <button class="size-preset" class:active={strokeWidth === 16} onclick={() => strokeWidth = 16}>XL</button>
+          <button class="size-preset" class:active={strokeWidth === 2} onclick={() => { strokeWidth = 2; applyToolMode(); }}>S</button>
+          <button class="size-preset" class:active={strokeWidth === 4} onclick={() => { strokeWidth = 4; applyToolMode(); }}>M</button>
+          <button class="size-preset" class:active={strokeWidth === 8} onclick={() => { strokeWidth = 8; applyToolMode(); }}>L</button>
+          <button class="size-preset" class:active={strokeWidth === 16} onclick={() => { strokeWidth = 16; applyToolMode(); }}>XL</button>
         </div>
       </div>
 
@@ -846,7 +1060,7 @@
         <div class="options-section">
           <span class="section-label">Text</span>
           <input type="text" bind:value={text} placeholder="Enter text…" />
-          <p class="hint">Click on the image to place text</p>
+          <p class="hint">Click on the image to place — double-click it later to edit</p>
         </div>
       {/if}
 
@@ -854,7 +1068,7 @@
         <div class="options-section">
           <span class="section-label">Balloon Text</span>
           <input type="text" bind:value={balloonText} placeholder="Enter balloon text…" />
-          <p class="hint">Draw a speech balloon on the image</p>
+          <p class="hint">Click on the image to place a speech balloon</p>
         </div>
       {/if}
 
@@ -862,7 +1076,7 @@
         <div class="options-section">
           <span class="section-label">Zoom — {magnifyZoom}x</span>
           <input type="range" min="1.5" max="5" step="0.5" bind:value={magnifyZoom} />
-          <p class="hint">Magnification level</p>
+          <p class="hint">Drag a circle on the image to magnify it</p>
         </div>
       {/if}
 
@@ -870,7 +1084,7 @@
         <div class="options-section">
           <span class="section-label">Intensity</span>
           <input type="range" min="1" max="24" bind:value={strokeWidth} />
-          <p class="hint">Adjust the {tool === 'blur' ? 'blur radius' : 'pixel size'}</p>
+          <p class="hint">Drag a region — it stays selectable so you can move it after</p>
         </div>
       {/if}
 
@@ -884,7 +1098,7 @@
         </div>
       {/if}
 
-      {#if tool === 'line' || tool === 'arrow' || tool === 'pen'}
+      {#if tool === 'line'}
         <div class="options-section">
           <span class="section-label">Line Style</span>
           <div class="line-styles">
@@ -924,10 +1138,12 @@
             <option value="monospace">Monospace</option>
             <option value="cursive">Cursive</option>
           </select>
+          <span class="section-label">Font size — {fontSize}px</span>
+          <input type="range" min="10" max="96" bind:value={fontSize} />
         </div>
       {/if}
 
-      {#if tool !== 'crop' && tool !== 'cursor'}
+      {#if tool !== 'crop' && tool !== 'cursor' && tool !== 'cutout' && tool !== 'select'}
         <div class="options-section">
           <span class="section-label">Opacity — {opacity}%</span>
           <input type="range" min="10" max="100" bind:value={opacity} />
@@ -937,8 +1153,12 @@
       <div class="options-section shortcuts">
         <span class="section-label">Shortcuts</span>
         <div class="shortcut-list">
+          <div><kbd>V</kbd> Select</div>
+          <div><kbd>Del</kbd> Delete selection</div>
           <div><kbd>Ctrl+Z</kbd> Undo</div>
           <div><kbd>Ctrl+Y</kbd> Redo</div>
+          <div><kbd>Ctrl+S</kbd> Save</div>
+          <div><kbd>Ctrl+C</kbd> Copy</div>
           <div><kbd>Esc</kbd> Close</div>
         </div>
       </div>
@@ -1057,6 +1277,31 @@
     min-width: 0;
     overflow: hidden;
   }
+  .zoom-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.6rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .zoom-btn {
+    padding: 0.15rem 0.55rem;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .zoom-btn:hover {
+    border-color: var(--accent);
+  }
+  .zoom-label {
+    min-width: 3.2rem;
+    font-variant-numeric: tabular-nums;
+  }
   .stage {
     position: relative;
     display: grid;
@@ -1074,8 +1319,6 @@
     background-position: 0 0, 0 10px, 10px -10px, -10px 0;
   }
   .stage canvas {
-    max-width: 95%;
-    max-height: 95%;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
     cursor: crosshair;
     touch-action: none;
@@ -1300,5 +1543,16 @@
   }
   button.ghost:hover:not(:disabled) {
     background: var(--surface-2);
+  }
+  button.active-tool {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tool-grid .tool-btn {
+    display: grid;
+    padding: 0;
+  }
+  .zoom-bar .zoom-btn {
+    display: inline-flex;
   }
 </style>

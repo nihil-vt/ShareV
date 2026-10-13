@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@tauri-apps/plugin-process": "^2.4.0",
-    "@tauri-apps/plugin-updater": "^2.13.3"
+    "@tauri-apps/plugin-updater": "^2.13.3",
+    "fabric": "^7.4.0"
   }
 }

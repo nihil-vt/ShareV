@@ -2,12 +2,7 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import Sidebar from './lib/components/Sidebar.svelte';
-  import CaptureView from './lib/components/CaptureView.svelte';
-  import RecordView from './lib/components/RecordView.svelte';
-  import HistoryView from './lib/components/HistoryView.svelte';
-  import SettingsView from './lib/components/SettingsView.svelte';
-  import DiagnosticsView from './lib/components/DiagnosticsView.svelte';
+  import MainToolbar from './lib/components/MainToolbar.svelte';
   import EditorWindow from './lib/components/EditorWindow.svelte';
   import PinView from './lib/components/PinView.svelte';
   import Toasts from './lib/components/Toasts.svelte';
@@ -89,22 +84,11 @@
   <Toasts />
 {:else}
   <div class="app">
-    <Sidebar />
-    <main class="content">
-      {#if !app.ready}
-        <div class="loading">Loading…</div>
-      {:else if app.view === 'capture'}
-        <CaptureView />
-      {:else if app.view === 'record'}
-        <RecordView />
-      {:else if app.view === 'history'}
-        <HistoryView />
-      {:else if app.view === 'settings'}
-        <SettingsView />
-      {:else}
-        <DiagnosticsView />
-      {/if}
-    </main>
+    {#if !app.ready}
+      <div class="loading">Loading…</div>
+    {:else}
+      <MainToolbar />
+    {/if}
     <Toasts />
   </div>
 {/if}
