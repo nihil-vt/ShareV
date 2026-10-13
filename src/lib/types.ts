@@ -1,5 +1,5 @@
 export type ImageFormat = 'png' | 'jpeg' | 'webp';
-export type CaptureKind = 'region' | 'fullscreen' | 'window' | 'scrolling';
+export type CaptureKind = 'region' | 'fullscreen' | 'window' | 'scrolling' | 'last-region';
 export type UploaderKind = 'none' | 'imgur' | 'http' | 'command';
 export type CopyFormat = 'url' | 'markdown' | 'html';
 export type RecordFormat = 'mp4' | 'webm' | 'gif';
@@ -18,7 +18,9 @@ export type CaptureTask =
   | 'command'
   | 'notify'
   | 'copyLink'
-  | 'ocr';
+  | 'ocr'
+  | 'quickmenu'
+  | 'shortenUrl';
 
 export interface Geometry {
   x: number;
@@ -102,7 +104,12 @@ export type EffectKind =
   | 'watermark'
   | 'canvasResize'
   | 'blur'
-  | 'roundedCorners';
+  | 'roundedCorners'
+  | 'resize'
+  | 'grayscale'
+  | 'sepia'
+  | 'adjust'
+  | 'rotate';
 
 export interface ShadowParams {
   offsetX: number;
@@ -138,6 +145,71 @@ export interface RoundedCornersParams {
   radius: number;
 }
 
+export interface ResizeParams {
+  width: number;
+  height: number;
+  keepAspect: boolean;
+}
+
+export interface AdjustParams {
+  brightness: number;
+  contrast: number;
+}
+
+export interface RotateParams {
+  mode: string;
+}
+
+export interface ImageMetadata {
+  path: string;
+  format: string;
+  width: number;
+  height: number;
+  bytes: number;
+  modified: number;
+  tags: Record<string, string>;
+}
+
+export type ShortenProvider =
+  | 'isgd'
+  | 'vgd'
+  | 'tinyurl'
+  | 'zws'
+  | 'bitly'
+  | 'kutt'
+  | 'polr'
+  | 'yourls'
+  | 'firebase'
+  | 'custom';
+
+export interface ShortenCreds {
+  host?: string;
+  key?: string;
+  username?: string;
+  password?: string;
+  domain?: string;
+  firebaseKey?: string;
+  firebaseDomain?: string;
+  customUrl?: string;
+}
+
+export interface ShortenSettings {
+  provider: ShortenProvider;
+  bitlyKey: string;
+  bitlyDomain: string;
+  kuttHost: string;
+  kuttKey: string;
+  polrHost: string;
+  polrKey: string;
+  yourlsHost: string;
+  yourlsSignature: string;
+  yourlsUsername: string;
+  yourlsPassword: string;
+  firebaseKey: string;
+  firebaseDomain: string;
+  customUrl: string;
+}
+
 export interface EffectsConfig {
   effects: EffectKind[];
   shadow: ShadowParams;
@@ -146,6 +218,9 @@ export interface EffectsConfig {
   canvasResize: CanvasResizeParams;
   blur: BlurParams;
   roundedCorners: RoundedCornersParams;
+  resize: ResizeParams;
+  adjust: AdjustParams;
+  rotate: RotateParams;
 }
 
 export interface FeatureFlags {
@@ -168,6 +243,7 @@ export interface Config {
   hotkeys: Hotkeys;
   upload: UploadConfig;
   record: RecordConfig;
+  shorten: ShortenSettings;
   afterCapture: AfterCaptureConfig;
   afterUpload: AfterUploadConfig;
   /** Tesseract language code used by the `ocr` task (e.g. "eng"). */
@@ -240,6 +316,7 @@ export interface RecordingInfo {
   startedAt: string;
   width: number;
   height: number;
+  paused: boolean;
 }
 
 export interface RecordingResult {

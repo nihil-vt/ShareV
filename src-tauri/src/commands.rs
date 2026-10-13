@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -59,6 +60,18 @@ pub async fn capture(
     let capture_kind = CaptureKind::parse(&kind)?;
     let config = state.config.lock().unwrap().clone();
 
+    // "Last region" replays the most recent interactive region selection
+    // without prompting again (ShareX parity).
+    let (capture_kind, geometry) = if kind == "last-region" {
+        let stored = *state.last_region.lock().unwrap();
+        let Some(stored) = stored else {
+            return Err(Error::msg("no region captured yet — capture a region first"));
+        };
+        (CaptureKind::Region, Some(stored))
+    } else {
+        (capture_kind, geometry)
+    };
+
     apply_delay(delay_seconds).await;
 
     // Hide our own window so it neither appears in the shot nor counts as the
@@ -77,7 +90,170 @@ pub async fn capture(
     }
 
     let draft = outcome?;
+    // Remember interactive region selections for "Last region".
+    if matches!(capture_kind, CaptureKind::Region)
+        && let Some(selected) = draft.geometry
+    {
+        *state.last_region.lock().unwrap() = Some(selected);
+    }
     finish_capture(&app, &config, draft).await
+}
+
+/// Geometry of the most recent interactive region capture, if any.
+/// Powers the "Last region" action (ShareX parity).
+#[tauri::command]
+pub fn last_region(state: State<'_, AppState>) -> Option<Geometry> {
+    *state.last_region.lock().unwrap()
+}
+
+/// Generate a QR code PNG from text (ShareX QR tool parity).
+/// Saves into the save directory and records a history entry.
+#[tauri::command]
+pub async fn qr_encode(
+    state: State<'_, AppState>,
+    text: String,
+    size: u32,
+) -> Result<String> {
+    use image::{DynamicImage, Luma};
+
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::msg("enter text to encode"));
+    }
+    let size = size.clamp(64, 2048);
+
+    let code = qrcode::QrCode::new(text.as_bytes())
+        .map_err(|err| Error::msg(format!("could not encode QR: {err}")))?;
+    let image = code
+        .render::<Luma<u8>>()
+        .min_dimensions(size, size)
+        .quiet_zone(true)
+        .build();
+    let dynamic = DynamicImage::ImageLuma8(image);
+
+    let config = state.config.lock().unwrap().clone();
+    let out = config
+        .resolved_save_dir()
+        .join(format!("qr-{}.png", crate::id::new_id()));
+    dynamic
+        .save(&out)
+        .map_err(|err| Error::msg(format!("could not save: {err}")))?;
+    let bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    history::append(
+        history::HistoryEntry {
+            id: crate::id::new_id(),
+            path: out.to_string_lossy().into_owned(),
+            file_name: out
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            kind: "image".into(),
+            width: size,
+            height: size,
+            bytes,
+            backend: "qr".into(),
+            created_at: chrono::Local::now().to_rfc3339(),
+            url: None,
+        },
+        config.max_history,
+    )?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
+/// Dump image metadata: dimensions, format, size, EXIF
+/// (ShareX metadata-viewer parity).
+#[tauri::command]
+pub async fn metadata_image(path: String) -> Result<serde_json::Value> {
+    use std::collections::BTreeMap;
+
+    let bytes = std::fs::read(&path)
+        .map_err(|err| Error::msg(format!("could not read file: {err}")))?;
+    let meta = std::fs::metadata(&path)
+        .map_err(|err| Error::msg(format!("could not stat file: {err}")))?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|err| Error::msg(format!("could not decode image: {err}")))?;
+
+    let mut tags: BTreeMap<String, String> = BTreeMap::new();
+    if let Ok(exif) = exif::Reader::new()
+        .read_from_container(&mut std::io::Cursor::new(&bytes))
+    {
+        for field in exif.fields() {
+            let name = field.tag.to_string();
+            let value = field.display_value().to_string();
+            if !value.is_empty() {
+                tags.entry(name).or_insert(value);
+            }
+        }
+    }
+
+    let format = image::guess_format(&bytes)
+        .map(|f| format!("{f:?}"))
+        .unwrap_or_else(|_| "Unknown".into());
+
+    Ok(serde_json::json!({
+        "path": path,
+        "format": format,
+        "width": img.width(),
+        "height": img.height(),
+        "bytes": meta.len(),
+        "modified": meta.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        "tags": tags,
+    }))
+}
+
+/// Decode every QR code found in an image (ShareX parity).
+#[tauri::command]
+pub async fn qr_decode(path: String) -> Result<Vec<String>> {
+    let img = image::open(&path)
+        .map_err(|err| Error::msg(format!("could not open {}: {err}", path)))?;
+    let gray = img.to_luma8();
+    let mut prepared = rqrr::PreparedImage::prepare(gray);
+    let mut texts = Vec::new();
+    for grid in prepared.detect_grids() {
+        match grid.decode() {
+            Ok((_meta, content)) => texts.push(content),
+            Err(_) => continue,
+        }
+    }
+    texts.sort();
+    texts.dedup();
+    Ok(texts)
+}
+
+/// Grab a fullscreen frame and return it as a PNG data URL without saving,
+/// history entries, or task runs. Powers the screen color picker.
+#[tauri::command]
+pub async fn grab_pixels(app: AppHandle, state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let config = state.config.lock().unwrap().clone();
+
+    let window = app.get_webview_window("main");
+    if let Some(window) = &window {
+        let _ = window.hide();
+        tokio::time::sleep(std::time::Duration::from_millis(220)).await;
+    }
+
+    let outcome = pipeline::grab(&config, CaptureKind::Fullscreen, None, None, None).await;
+
+    if let Some(window) = &window {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+
+    let draft = outcome?;
+    let (width, height) = (draft.image.width(), draft.image.height());
+    let encoded = pipeline::encode(
+        &draft.image,
+        crate::config::ImageFormat::Png,
+        100,
+    )?;
+    Ok(serde_json::json!({
+        "dataUrl": format!("data:image/png;base64,{}", STANDARD.encode(encoded)),
+        "width": width,
+        "height": height,
+    }))
 }
 
 /// Capture a scrolling region: the user selects an area, scrolls while ShareV
@@ -368,6 +544,53 @@ pub fn stop_auto_capture(state: State<'_, AppState>) -> Result<AutoCaptureInfo> 
 #[tauri::command]
 pub fn auto_capture_status(state: State<'_, AppState>) -> Option<AutoCaptureInfo> {
     state.auto.lock().unwrap().as_ref().map(|s| s.info())
+}
+
+/// Re-capture the most recently selected region (hotkey action).
+/// Notifies instead of failing when no region has been captured yet.
+pub async fn capture_last_region_and_notify(app: AppHandle) {
+    let stored = *app.state::<AppState>().last_region.lock().unwrap();
+    let Some(stored) = stored else {
+        notify_info(&app, "Last region", "Capture a region first.");
+        return;
+    };
+    let config = app.state::<AppState>().config.lock().unwrap().clone();
+
+    apply_delay(Some(config.capture_delay_seconds)).await;
+
+    let window = app.get_webview_window("main");
+    let was_visible = window
+        .as_ref()
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if was_visible {
+        if let Some(window) = &window {
+            let _ = window.hide();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+    }
+
+    let outcome = pipeline::grab(&config, CaptureKind::Region, Some(stored), None, None).await;
+
+    if was_visible && let Some(window) = &window {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+
+    match outcome {
+        Ok(draft) => match finish_capture(&app, &config, draft).await {
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("capture failed: {err}");
+                notify_error(&app, &err.to_string());
+            }
+        },
+        Err(Error::Cancelled) => {}
+        Err(err) => {
+            log::warn!("capture failed: {err}");
+            notify_error(&app, &err.to_string());
+        }
+    }
 }
 
 /// Shared entry point for the tray menu and global hotkeys.
@@ -742,6 +965,103 @@ pub async fn upload_last(app: AppHandle) -> Result<Option<UploadOutcome>> {
     Ok(Some(outcome))
 }
 
+/// Upload raw text via a temporary file (ShareX "Upload text" parity).
+/// Note: image-only destinations such as Imgur reject plain text; generic
+/// HTTP and command uploaders accept it.
+#[tauri::command]
+pub async fn upload_text(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<UploadOutcome> {
+    if text.trim().is_empty() {
+        return Err(Error::msg("nothing to upload"));
+    }
+    let config = state.config.lock().unwrap().clone();
+    let path = std::env::temp_dir().join(format!("sharev-text-{}.txt", crate::id::new_id()));
+    std::fs::write(&path, text).map_err(|err| Error::msg(format!("could not stage text: {err}")))?;
+    let path_str = path.to_string_lossy().into_owned();
+    let url = do_upload(&config, &path_str).await?;
+    let _ = std::fs::remove_file(&path);
+    let (link, copied) = tasks::after_upload(Some(&app), &config, &url).await;
+    let outcome = upload_outcome(&config, &path_str, url, link, copied);
+    let _ = app.emit("upload-completed", &outcome);
+    Ok(outcome)
+}
+
+/// Download a URL to a temporary file and upload it
+/// (ShareX "Upload from URL" parity).
+#[tauri::command]
+pub async fn upload_url(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<UploadOutcome> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err(Error::msg("no URL given"));
+    }
+    let config = state.config.lock().unwrap().clone();
+    let response = reqwest::get(trimmed)
+        .await
+        .map_err(|err| Error::msg(format!("download failed: {err}")))?;
+    if !response.status().is_success() {
+        return Err(Error::msg(format!("download failed: HTTP {}", response.status())));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|err| Error::msg(format!("download failed: {err}")))?;
+    // Keep the remote file name (and extension, for MIME detection) when sane.
+    let file_name = trimmed
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty() && n.len() < 128 && !n.contains('\\'))
+        .map(str::to_string)
+        .unwrap_or_else(|| "download.bin".to_string());
+    let path = std::env::temp_dir().join(format!("sharev-url-{}-{file_name}", crate::id::new_id()));
+    std::fs::write(&path, &bytes)
+        .map_err(|err| Error::msg(format!("could not stage download: {err}")))?;
+    let path_str = path.to_string_lossy().into_owned();
+    let url = do_upload(&config, &path_str).await?;
+    let _ = std::fs::remove_file(&path);
+    let (link, copied) = tasks::after_upload(Some(&app), &config, &url).await;
+    let outcome = upload_outcome(&config, &path_str, url, link, copied);
+    let _ = app.emit("upload-completed", &outcome);
+    Ok(outcome)
+}
+
+/// Upload every regular file in a directory, in name order
+/// (ShareX "Upload folder" parity).
+#[tauri::command]
+pub async fn upload_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<UploadOutcome>> {
+    let config = state.config.lock().unwrap().clone();
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&path)
+        .map_err(|err| Error::msg(format!("could not list folder: {err}")))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort();
+    if files.is_empty() {
+        return Err(Error::msg("the folder contains no files"));
+    }
+    let mut outcomes = Vec::with_capacity(files.len());
+    for file in files {
+        let path_str = file.to_string_lossy().into_owned();
+        let url = do_upload(&config, &path_str).await?;
+        let (link, copied) = tasks::after_upload(Some(&app), &config, &url).await;
+        outcomes.push(upload_outcome(&config, &path_str, url, link, copied));
+    }
+    Ok(outcomes)
+}
+
 // ---------------------------------------------------------------------------
 // Screen recording
 // ---------------------------------------------------------------------------
@@ -756,6 +1076,7 @@ pub struct RecordingInfo {
     pub started_at: String,
     pub width: u32,
     pub height: u32,
+    pub paused: bool,
 }
 
 impl RecordingInfo {
@@ -768,6 +1089,7 @@ impl RecordingInfo {
             started_at: active.started_at.clone(),
             width: active.width,
             height: active.height,
+            paused: active.pause_started.is_some(),
         }
     }
 }
@@ -899,6 +1221,51 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     Ok(result)
 }
 
+/// Freeze or resume the in-progress recording (ShareX parity).
+/// Returns the updated recording state for the UI.
+#[tauri::command]
+pub async fn pause_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    paused: bool,
+) -> Result<RecordingInfo> {
+    let mut guard = state.recorder.lock().unwrap();
+    let Some(active) = guard.as_mut() else {
+        return Err(Error::msg("no recording is in progress"));
+    };
+    record::set_paused(active, paused)?;
+    let info = RecordingInfo::from_active(active);
+    crate::tray::refresh(&app);
+    Ok(info)
+}
+
+/// Abort the in-progress recording without saving anything: the encoder is
+/// stopped and every partial output is deleted (ShareX parity).
+#[tauri::command]
+pub async fn abort_recording(app: AppHandle, state: State<'_, AppState>) -> Result<()> {
+    let active = state.recorder.lock().unwrap().take();
+    let Some(active) = active else {
+        return Err(Error::msg("no recording is in progress"));
+    };
+    let record_path = active.record_path.clone();
+    let output = active.output.clone();
+    let log_path = active.log_path.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let mut active = active;
+        let _ = record::stop(&mut active);
+    })
+    .await
+    .map_err(|err| Error::msg(err.to_string()))?;
+
+    let _ = std::fs::remove_file(&record_path);
+    let _ = std::fs::remove_file(&output);
+    let _ = std::fs::remove_file(&log_path);
+    let _ = app.emit("recording-aborted", ());
+    crate::tray::refresh(&app);
+    Ok(())
+}
+
 /// Start recording if idle, or stop the active recording (used by the tray and
 /// the `record-toggle` hotkey action).
 pub async fn toggle_recording(app: AppHandle, kind: CaptureKind) {
@@ -949,7 +1316,7 @@ pub async fn record_until_interrupt(
 
 /// Signal the encoder to stop, verify the output, run post-processing and add a
 /// history entry. Shared by the Tauri command and the CLI.
-async fn stop_and_store(
+pub(crate) async fn stop_and_store(
     active: record::ActiveRecording,
     config: &Config,
 ) -> Result<RecordingResult> {
@@ -979,7 +1346,11 @@ async fn stop_and_store(
 
     let path = active.output.clone();
     let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    let duration_ms = started.elapsed().as_millis() as u64;
+    // Pause gaps (SIGSTOP) don't count as recorded time.
+    let duration_ms = started
+        .elapsed()
+        .as_millis()
+        .saturating_sub(active.paused_ms as u128) as u64;
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -1130,6 +1501,245 @@ pub async fn pick_directory(app: AppHandle) -> Option<String> {
         .into_path()
         .ok()
         .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Copy a finished capture to a user-chosen path via the save dialog
+/// (ShareX "Save image to file with dialog" parity, used by "Save as…").
+#[tauri::command]
+pub async fn save_capture_as(app: AppHandle, source: String) -> Result<String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let from = std::path::PathBuf::from(&source);
+    let file_name = from
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "capture.png".to_string());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(&file_name)
+        .save_file(move |dest| {
+            let _ = tx.send(dest);
+        });
+    let dest = rx.await.ok().flatten().ok_or_else(|| Error::msg("save cancelled"))?;
+    let dest_path = dest
+        .into_path()
+        .map_err(|_| Error::msg("could not resolve the save path"))?;
+    std::fs::copy(&from, &dest_path).map_err(|err| {
+        Error::msg(format!(
+            "could not save to {}: {err}",
+            dest_path.to_string_lossy()
+        ))
+    })?;
+    Ok(dest_path.to_string_lossy().into_owned())
+}
+
+/// Start watching a folder for new images (ShareX watch-folder parity).
+#[tauri::command]
+pub async fn watch_folder_add(app: AppHandle, path: String) -> Result<bool> {
+    Ok(crate::watch::watch_add(app, PathBuf::from(path)))
+}
+
+/// Stop watching a folder.
+#[tauri::command]
+pub async fn watch_folder_remove(path: String) -> Result<bool> {
+    Ok(crate::watch::watch_remove(&path))
+}
+
+/// List watched folders.
+#[tauri::command]
+pub async fn watch_folder_list() -> Result<Vec<String>> {
+    Ok(crate::watch::watch_list())
+}
+
+/// Shorten a URL with a specific provider and inline credentials.
+/// Used by the tools dialog so providers can be tested before saving.
+#[tauri::command]
+pub async fn shorten_url_with(
+    url: String,
+    provider: String,
+    credentials: serde_json::Value,
+) -> Result<String> {
+    let provider = crate::shorten::ShortenProvider::parse(&provider)
+        .ok_or_else(|| Error::msg(format!("unknown shortener: {provider}")))?;
+    let creds: crate::shorten::ShortenConfig = serde_json::from_value(credentials)
+        .map_err(|err| Error::msg(format!("bad credentials: {err}")))?;
+    crate::shorten::shorten(&url, provider, &creds).await
+}
+
+/// Shorten a URL with the saved provider and credentials.
+#[tauri::command]
+pub async fn shorten_url(state: State<'_, AppState>, url: String) -> Result<String> {
+    let config = state.config.lock().unwrap().clone();
+    let provider = crate::shorten::ShortenProvider::parse(&config.shorten.provider)
+        .ok_or_else(|| Error::msg(format!("unknown shortener: {}", config.shorten.provider)))?;
+    let creds = crate::shorten::ShortenConfig::for_provider(&config, provider);
+    crate::shorten::shorten(&url, provider, &creds).await
+}
+
+/// Compute MD5, SHA-256, SHA-512 and BLAKE3 digests of a file
+/// (ShareX hash-checker parity).
+#[tauri::command]
+pub async fn hash_file(path: String) -> Result<serde_json::Value> {
+    use sha2::Digest;
+
+    let hex = |bytes: &[u8]| -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    };
+    let bytes = std::fs::read(&path).map_err(|err| Error::msg(format!("could not read file: {err}")))?;
+    Ok(serde_json::json!({
+        "md5": hex(&md5::Md5::digest(&bytes)),
+        "sha256": hex(&sha2::Sha256::digest(&bytes)),
+        "sha512": hex(&sha2::Sha512::digest(&bytes)),
+        "blake3": blake3::hash(&bytes).to_hex().to_string(),
+    }))
+}
+
+/// Join several images horizontally or vertically with spacing
+/// (ShareX image-combiner parity). Saves into the save directory and records
+/// a history entry.
+#[tauri::command]
+pub async fn combine_images(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    direction: String,
+    spacing: u32,
+    background: String,
+) -> Result<String> {
+    use image::{DynamicImage, ImageBuffer, Rgba, imageops};
+
+    if paths.len() < 2 {
+        return Err(Error::msg("choose at least two images"));
+    }
+    let horizontal = !direction.trim().to_ascii_lowercase().starts_with('v');
+
+    let mut images = Vec::with_capacity(paths.len());
+    for path in &paths {
+        let img = image::open(path)
+            .map_err(|err| Error::msg(format!("could not open {}: {err}", path)))?;
+        images.push(img.to_rgba8());
+    }
+    let spacing = spacing.min(200);
+    let parse = |hex: &str| -> [u8; 4] {
+        let h = hex.trim_start_matches('#');
+        let n = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
+        if h.len() >= 6 { [n(0), n(2), n(4), 255] } else { [0, 0, 0, 0] }
+    };
+    let bg = Rgba(parse(&background));
+
+    let (canvas_w, canvas_h) = if horizontal {
+        let w: u32 = images.iter().map(|i| i.width()).sum::<u32>() + spacing * (images.len() as u32 - 1);
+        let h: u32 = images.iter().map(|i| i.height()).max().unwrap_or(0);
+        (w.max(1), h.max(1))
+    } else {
+        let w: u32 = images.iter().map(|i| i.width()).max().unwrap_or(0);
+        let h: u32 = images.iter().map(|i| i.height()).sum::<u32>() + spacing * (images.len() as u32 - 1);
+        (w.max(1), h.max(1))
+    };
+    let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, bg);
+    let (mut x, mut y) = (0i64, 0i64);
+    for img in &images {
+        imageops::overlay(&mut canvas, img, x, y);
+        if horizontal {
+            x += img.width() as i64 + spacing as i64;
+        } else {
+            y += img.height() as i64 + spacing as i64;
+        }
+    }
+
+    let config = state.config.lock().unwrap().clone();
+    let out = config
+        .resolved_save_dir()
+        .join(format!("combined-{}.png", crate::id::new_id()));
+    DynamicImage::ImageRgba8(canvas)
+        .save(&out)
+        .map_err(|err| Error::msg(format!("could not save: {err}")))?;
+    let bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    history::append(
+        history::HistoryEntry {
+            id: crate::id::new_id(),
+            path: out.to_string_lossy().into_owned(),
+            file_name: out
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            kind: "image".into(),
+            width: canvas_w,
+            height: canvas_h,
+            bytes,
+            backend: "combiner".into(),
+            created_at: chrono::Local::now().to_rfc3339(),
+            url: None,
+        },
+        config.max_history,
+    )?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
+/// Open-folder dialog for the watch-folder tool (ShareX parity).
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let _ = tx.send(folder);
+    });
+    let folder = rx.await.ok().flatten()?;
+    folder
+        .into_path()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Open-file dialog for the "Upload file…" action (ShareX parity).
+#[tauri::command]
+pub async fn pick_file(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_file(move |file| {
+        let _ = tx.send(file);
+    });
+    let file = rx.await.ok().flatten()?;
+    file
+        .into_path()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod hash_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_non_http_scheme_without_network() {
+        use crate::shorten::{ShortenConfig, ShortenProvider};
+        for provider in [
+            ShortenProvider::Isgd,
+            ShortenProvider::Bitly,
+            ShortenProvider::Kutt,
+        ] {
+            for bad in ["", "example.com", "ftp://example.com", "   "] {
+                let err = crate::shorten::shorten(bad, provider, &ShortenConfig::default()).await;
+                assert!(err.is_err(), "expected rejection of {bad:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn hashes_known_digests() {
+        let path = std::env::temp_dir().join("sharev-hash-test.txt");
+        std::fs::write(&path, b"abc").unwrap();
+        let value = hash_file(path.to_string_lossy().into_owned()).await.unwrap();
+        assert_eq!(
+            value["sha256"],
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(value["md5"], "900150983cd24fb0d6963f7d28e17f72");
+        assert!(value["blake3"].as_str().unwrap().len() == 64);
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 // ---------------------------------------------------------------------------

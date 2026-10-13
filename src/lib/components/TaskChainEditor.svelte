@@ -23,6 +23,8 @@
     notify: 'Notify',
     copyLink: 'Copy link',
     ocr: 'Run OCR',
+    quickmenu: 'Quick task menu',
+    shortenUrl: 'Shorten URL',
   };
 
   const descriptions: Partial<Record<CaptureTask, string>> = {
@@ -37,6 +39,7 @@
     notify: 'Show a desktop notification.',
     copyLink: 'Copy the upload link to the clipboard.',
     ocr: 'Run text recognition (Tesseract) and copy the result to the clipboard.',
+    quickmenu: 'Show the quick task menu for each capture.',
   };
 
   const remaining = $derived(available.filter((t) => !tasks.includes(t)));

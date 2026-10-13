@@ -1,4 +1,4 @@
-use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
@@ -36,6 +36,80 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         "Start Recording"
     };
     let record = MenuItem::with_id(app, "toggle_recording", toggle_label, true, None::<&str>)?;
+    let auto_active = app
+        .state::<crate::AppState>()
+        .auto
+        .lock()
+        .unwrap()
+        .is_some();
+    let auto_label = if auto_active {
+        "Stop Auto Capture"
+    } else {
+        "Start Auto Capture"
+    };
+    let auto = MenuItem::with_id(app, "toggle_auto_capture", auto_label, true, None::<&str>)?;
+    let hotkeys_on = app
+        .state::<crate::AppState>()
+        .config
+        .lock()
+        .unwrap()
+        .hotkeys
+        .enabled;
+    let hotkeys_label = if hotkeys_on {
+        "Disable Hotkeys"
+    } else {
+        "Enable Hotkeys"
+    };
+    let hotkeys = MenuItem::with_id(app, "toggle_hotkeys", hotkeys_label, true, None::<&str>)?;
+    let current_delay = app
+        .state::<crate::AppState>()
+        .config
+        .lock()
+        .unwrap()
+        .capture_delay_seconds;
+    let delay_menu = Submenu::with_id(app, "delay_menu", "Capture Delay", true)?;
+    for seconds in [0u32, 1, 3, 5, 10] {
+        let label = if seconds == 0 {
+            "No delay".to_string()
+        } else {
+            format!("{seconds}s")
+        };
+        let marker = if current_delay == seconds { "● " } else { "" };
+        delay_menu.append(&MenuItem::with_id(
+            app,
+            format!("delay_{seconds}"),
+            format!("{marker}{label}"),
+            true,
+            None::<&str>,
+        )?)?;
+    }
+    let current_uploader = app
+        .state::<crate::AppState>()
+        .config
+        .lock()
+        .unwrap()
+        .upload
+        .uploader;
+    let dest_menu = Submenu::with_id(app, "dest_menu", "Image Uploader", true)?;
+    for (id, label) in [
+        ("none", "None (local only)"),
+        ("imgur", "Imgur"),
+        ("http", "Custom HTTP"),
+        ("command", "Custom command"),
+    ] {
+        let marker = if current_uploader.as_str() == id {
+            "● "
+        } else {
+            ""
+        };
+        dest_menu.append(&MenuItem::with_id(
+            app,
+            format!("uploader_{id}"),
+            format!("{marker}{label}"),
+            true,
+            None::<&str>,
+        )?)?;
+    }
     let pin = MenuItem::with_id(
         app,
         "pin_last",
@@ -67,6 +141,10 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &scrolling,
             &sep_a,
             &record,
+            &auto,
+            &hotkeys,
+            &delay_menu,
+            &dest_menu,
             &sep_b,
             &pin,
             &upload,
@@ -132,6 +210,96 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
             tauri::async_runtime::spawn(async move {
                 crate::commands::toggle_recording(app, CaptureKind::Region).await;
             });
+        }
+        "toggle_auto_capture" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let active = app
+                    .state::<crate::AppState>()
+                    .auto
+                    .lock()
+                    .unwrap()
+                    .is_some();
+                if active {
+                    if let Err(err) =
+                        crate::commands::stop_auto_capture(app.state::<crate::AppState>())
+                    {
+                        log::warn!("could not stop auto capture: {err}");
+                    }
+                } else if let Err(err) = crate::commands::start_auto_capture(
+                    app.clone(),
+                    app.state::<crate::AppState>(),
+                    "region".to_string(),
+                    Some(3000),
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                {
+                    log::warn!("could not start auto capture: {err}");
+                    crate::commands::capture_error(&app, &err.to_string());
+                }
+                crate::tray::refresh(&app);
+            });
+        }
+        "toggle_hotkeys" => {
+            let mut config = app
+                .state::<crate::AppState>()
+                .config
+                .lock()
+                .unwrap()
+                .clone();
+            config.hotkeys.enabled = !config.hotkeys.enabled;
+            match config.save() {
+                Ok(()) => {
+                    *app.state::<crate::AppState>().config.lock().unwrap() = config.clone();
+                    crate::shortcuts::reload(app, &config);
+                }
+                Err(err) => log::warn!("could not save hotkey setting: {err}"),
+            }
+            crate::tray::refresh(app);
+        }
+        id if id.starts_with("delay_") => {
+            if let Ok(seconds) = id["delay_".len()..].parse::<u32>() {
+                let mut config = app
+                    .state::<crate::AppState>()
+                    .config
+                    .lock()
+                    .unwrap()
+                    .clone();
+                config.capture_delay_seconds = seconds;
+                match config.save() {
+                    Ok(()) => {
+                        *app.state::<crate::AppState>().config.lock().unwrap() = config;
+                    }
+                    Err(err) => log::warn!("could not save delay setting: {err}"),
+                }
+                crate::tray::refresh(app);
+            }
+        }
+        id if id.starts_with("uploader_") => {
+            if let Some(uploader) =
+                crate::config::UploaderKind::parse(&id["uploader_".len()..])
+            {
+                let mut config = app
+                    .state::<crate::AppState>()
+                    .config
+                    .lock()
+                    .unwrap()
+                    .clone();
+                config.upload.uploader = uploader;
+                match config.save() {
+                    Ok(()) => {
+                        *app.state::<crate::AppState>().config.lock().unwrap() = config;
+                    }
+                    Err(err) => log::warn!("could not save uploader setting: {err}"),
+                }
+                crate::tray::refresh(app);
+            }
         }
         "pin_last" => {
             let app = app.clone();

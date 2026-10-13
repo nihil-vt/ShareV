@@ -60,6 +60,35 @@ pub struct ActiveRecording {
     pub height: u32,
     pub fps: u32,
     pub gif_fps: u32,
+    /// Accumulated paused time; excluded from the reported duration.
+    pub paused_ms: u64,
+    /// Set while the encoder is frozen with SIGSTOP.
+    pub pause_started: Option<Instant>,
+}
+
+/// Freeze (`SIGSTOP`) or resume (`SIGCONT`) the encoder process.
+/// The container stays valid across the gap; pause time is excluded from the
+/// reported duration. Returns whether the recording is now paused.
+pub fn set_paused(recording: &mut ActiveRecording, paused: bool) -> Result<bool> {
+    let pid = recording.child.id();
+    let now = Instant::now();
+    unsafe {
+        if paused {
+            if recording.pause_started.is_none() {
+                if libc::kill(pid as libc::pid_t, libc::SIGSTOP) != 0 {
+                    return Err(Error::msg("could not pause the recorder"));
+                }
+                recording.pause_started = Some(now);
+            }
+        } else if let Some(started) = recording.pause_started.take() {
+            if libc::kill(pid as libc::pid_t, libc::SIGCONT) != 0 {
+                recording.pause_started = Some(started);
+                return Err(Error::msg("could not resume the recorder"));
+            }
+            recording.paused_ms += started.elapsed().as_millis() as u64;
+        }
+    }
+    Ok(recording.pause_started.is_some())
 }
 
 /// True when `wf-recorder` is available and we are on Wayland.
@@ -230,6 +259,8 @@ pub fn start(request: RecordRequest) -> Result<ActiveRecording> {
         height: request.geometry.map(|g| g.height).unwrap_or(0),
         fps: request.fps,
         gif_fps: request.gif_fps,
+        paused_ms: 0,
+        pause_started: None,
     })
 }
 
@@ -342,6 +373,15 @@ fn device_or_default(system: bool, device: &str) -> String {
 
 /// Ask the encoder to stop and wait for it to finish writing the file.
 pub fn stop(recording: &mut ActiveRecording) -> Result<()> {
+    // A frozen (SIGSTOP) encoder cannot answer SIGINT — resume it first.
+    // Any open pause interval counts up to this moment.
+    if let Some(started) = recording.pause_started.take() {
+        unsafe {
+            libc::kill(recording.child.id() as libc::pid_t, libc::SIGCONT);
+        }
+        recording.paused_ms += started.elapsed().as_millis() as u64;
+        std::thread::sleep(Duration::from_millis(100));
+    }
     signal_interrupt(recording.child.id());
 
     let deadline = Instant::now() + Duration::from_secs(15);

@@ -63,6 +63,12 @@ pub enum Task {
     CopyLink,
     /// Run OCR on the capture and copy the recognized text to the clipboard.
     Ocr,
+    /// Show the quick task menu for this capture (handled by the frontend;
+    /// a no-op in the backend task chain).
+    QuickMenu,
+    /// Shorten the freshly uploaded URL before the link is copied/opened
+    /// (post-upload, is.gd).
+    ShortenUrl,
 }
 
 impl Task {
@@ -79,6 +85,8 @@ impl Task {
             Task::Notify => "notify",
             Task::CopyLink => "copyLink",
             Task::Ocr => "ocr",
+            Task::QuickMenu => "quickmenu",
+            Task::ShortenUrl => "shortenUrl",
         }
     }
 
@@ -96,6 +104,8 @@ impl Task {
             "notify" | "notification" => Some(Task::Notify),
             "copylink" => Some(Task::CopyLink),
             "ocr" | "text" => Some(Task::Ocr),
+            "quickmenu" | "quicktaskmenu" => Some(Task::QuickMenu),
+            "shortenurl" | "shorten" => Some(Task::ShortenUrl),
             _ => None,
         }
     }
@@ -245,6 +255,16 @@ impl UploaderKind {
             UploaderKind::Command => "command",
         }
     }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "none" => Some(UploaderKind::None),
+            "imgur" => Some(UploaderKind::Imgur),
+            "http" => Some(UploaderKind::Http),
+            "command" => Some(UploaderKind::Command),
+            _ => None,
+        }
+    }
 }
 
 /// How the returned link is formatted before being copied to the clipboard.
@@ -300,6 +320,63 @@ impl Default for UploadConfig {
             http_headers: String::new(),
             http_response_path: String::new(),
             command: String::new(),
+        }
+    }
+}
+
+/// Stored URL-shortener configuration (ShareX parity). One flat block so
+/// every provider's fields live side by side; the active provider reads
+/// only its own.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ShortenSettings {
+    /// Active provider id (see `ShortenProvider::as_str`).
+    pub provider: String,
+    /// bitly generic access token.
+    pub bitly_key: String,
+    /// bitly custom domain (e.g. "example.bitly.com").
+    pub bitly_domain: String,
+    /// kutt host (empty defaults to the public kutt.it).
+    pub kutt_host: String,
+    /// kutt API key.
+    pub kutt_key: String,
+    /// polr host.
+    pub polr_host: String,
+    /// polr API key (empty for public polr installs without an API).
+    pub polr_key: String,
+    /// YOURLS host.
+    pub yourls_host: String,
+    /// YOURLS signature token (preferred over username/password).
+    pub yourls_signature: String,
+    /// YOURLS username (legacy alternative).
+    pub yourls_username: String,
+    /// YOURLS password (legacy alternative).
+    pub yourls_password: String,
+    /// Firebase Dynamic Links API key.
+    pub firebase_key: String,
+    /// Firebase dynamic-link domain prefix.
+    pub firebase_domain: String,
+    /// Custom URL template with a `{url}` placeholder.
+    pub custom_url: String,
+}
+
+impl Default for ShortenSettings {
+    fn default() -> Self {
+        Self {
+            provider: "isgd".into(),
+            bitly_key: String::new(),
+            bitly_domain: String::new(),
+            kutt_host: "kutt.it".into(),
+            kutt_key: String::new(),
+            polr_host: String::new(),
+            polr_key: String::new(),
+            yourls_host: String::new(),
+            yourls_signature: String::new(),
+            yourls_username: String::new(),
+            yourls_password: String::new(),
+            firebase_key: String::new(),
+            firebase_domain: String::new(),
+            custom_url: String::new(),
         }
     }
 }
@@ -440,6 +517,8 @@ pub struct Config {
     pub upload: UploadConfig,
     /// Screen recording.
     pub record: RecordConfig,
+    /// URL shortener settings.
+    pub shorten: ShortenSettings,
     /// Ordered tasks run after a capture. Field-level `default` keeps a missing
     /// section as `None` so legacy boolean flags can drive migration.
     #[serde(default)]
@@ -476,6 +555,7 @@ impl Default for Config {
             hotkeys: Hotkeys::default(),
             upload: UploadConfig::default(),
             record: RecordConfig::default(),
+            shorten: ShortenSettings::default(),
             after_capture: AfterCaptureConfig {
                 tasks: Some(default_capture_tasks()),
                 command: String::new(),
@@ -693,6 +773,7 @@ mod tests {
         assert_eq!(Task::parse("  Notify "), Some(Task::Notify));
         assert_eq!(Task::parse("copy-image"), Some(Task::CopyImage));
         assert_eq!(Task::parse("copyLink"), Some(Task::CopyLink));
+        assert_eq!(Task::parse("quickmenu"), Some(Task::QuickMenu));
         assert_eq!(Task::parse("nonsense"), None);
     }
 

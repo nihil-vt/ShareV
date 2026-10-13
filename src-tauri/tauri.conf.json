@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "ShareV",
-        "width": 980,
-        "height": 620,
-        "minWidth": 620,
-        "minHeight": 64,
+        "width": 1024,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }

@@ -25,7 +25,13 @@ pub enum Action {
     CaptureFullscreen,
     CaptureWindow,
     CaptureScrolling,
+    CaptureLastRegion,
     RecordToggle,
+    StopRecording,
+    AbortRecording,
+    AutoCaptureToggle,
+    UploadLast,
+    PinLast,
     OpenEditor,
 }
 
@@ -37,7 +43,15 @@ impl Action {
             "capture-fullscreen" | "fullscreen" => Some(Action::CaptureFullscreen),
             "capture-window" | "window" => Some(Action::CaptureWindow),
             "capture-scrolling" | "scrolling" | "scroll" => Some(Action::CaptureScrolling),
+            "capture-last-region" | "last-region" => Some(Action::CaptureLastRegion),
             "record-toggle" | "record" | "toggle-recording" => Some(Action::RecordToggle),
+            "stop-recording" => Some(Action::StopRecording),
+            "abort-recording" => Some(Action::AbortRecording),
+            "auto-capture-toggle" | "auto-capture" | "toggle-auto-capture" => {
+                Some(Action::AutoCaptureToggle)
+            }
+            "upload-last" | "upload" => Some(Action::UploadLast),
+            "pin-last" | "pin" => Some(Action::PinLast),
             "open-editor" | "editor" => Some(Action::OpenEditor),
             _ => None,
         }
@@ -49,7 +63,13 @@ impl Action {
             Action::CaptureFullscreen => "capture-fullscreen",
             Action::CaptureWindow => "capture-window",
             Action::CaptureScrolling => "capture-scrolling",
+            Action::CaptureLastRegion => "capture-last-region",
             Action::RecordToggle => "record-toggle",
+            Action::StopRecording => "stop-recording",
+            Action::AbortRecording => "abort-recording",
+            Action::AutoCaptureToggle => "auto-capture-toggle",
+            Action::UploadLast => "upload-last",
+            Action::PinLast => "pin-last",
             Action::OpenEditor => "open-editor",
         }
     }
@@ -60,7 +80,13 @@ impl Action {
             Action::CaptureFullscreen => "Capture the screen",
             Action::CaptureWindow => "Capture a window",
             Action::CaptureScrolling => "Capture a scrolling region",
+            Action::CaptureLastRegion => "Capture the last region again",
             Action::RecordToggle => "Start/stop recording",
+            Action::StopRecording => "Stop the recording",
+            Action::AbortRecording => "Discard the recording",
+            Action::AutoCaptureToggle => "Start/stop auto capture",
+            Action::UploadLast => "Upload the last capture",
+            Action::PinLast => "Pin the last capture",
             Action::OpenEditor => "Open ShareV",
         }
     }
@@ -204,8 +230,95 @@ pub fn dispatch(app: &AppHandle, action: Action) {
             Action::CaptureScrolling => {
                 crate::commands::capture_and_notify(app, CaptureKind::Scrolling).await
             }
+            Action::CaptureLastRegion => {
+                crate::commands::capture_last_region_and_notify(app).await
+            }
             Action::RecordToggle => {
                 crate::commands::toggle_recording(app, CaptureKind::Region).await
+            }
+            Action::StopRecording => {
+                let active = app
+                    .state::<crate::AppState>()
+                    .recorder
+                    .lock()
+                    .unwrap()
+                    .take();
+                if let Some(active) = active {
+                    let config = app
+                        .state::<crate::AppState>()
+                        .config
+                        .lock()
+                        .unwrap()
+                        .clone();
+                    match crate::commands::stop_and_store(active, &config).await {
+                        Ok(result) => {
+                            let _ = app.emit("recording-stopped", &result);
+                        }
+                        Err(err) => {
+                            log::warn!("recording failed: {err}");
+                            crate::commands::notify_error(&app, &err.to_string());
+                        }
+                    }
+                    crate::tray::refresh(&app);
+                }
+            }
+            Action::AbortRecording => {
+                if let Err(err) = crate::commands::abort_recording(
+                    app.clone(),
+                    app.state::<crate::AppState>(),
+                )
+                .await
+                {
+                    log::warn!("could not abort recording: {err}");
+                }
+            }
+            Action::AutoCaptureToggle => {
+                let active = app
+                    .state::<crate::AppState>()
+                    .auto
+                    .lock()
+                    .unwrap()
+                    .is_some();
+                if active {
+                    if let Err(err) = crate::commands::stop_auto_capture(
+                        app.state::<crate::AppState>(),
+                    ) {
+                        log::warn!("could not stop auto capture: {err}");
+                    }
+                } else if let Err(err) = crate::commands::start_auto_capture(
+                    app.clone(),
+                    app.state::<crate::AppState>(),
+                    "region".to_string(),
+                    Some(3000),
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                {
+                    log::warn!("could not start auto capture: {err}");
+                    crate::commands::capture_error(&app, &err.to_string());
+                }
+                crate::tray::refresh(&app);
+            }
+            Action::UploadLast => match crate::commands::upload_last(app.clone()).await {
+                Ok(Some(outcome)) => {
+                    crate::commands::notify_info(&app, "Upload finished", &outcome.url);
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    log::warn!("could not upload the last capture: {err}");
+                    crate::commands::capture_error(&app, &err.to_string());
+                }
+            },
+            Action::PinLast => {
+                if let Err(err) = crate::commands::pin_last(app.clone()) {
+                    log::warn!("could not pin the last capture: {err}");
+                    crate::commands::capture_error(&app, &err.to_string());
+                }
             }
             Action::OpenEditor => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -281,6 +394,14 @@ mod tests {
         );
         assert_eq!(Action::parse(" Record-Toggle "), Some(Action::RecordToggle));
         assert_eq!(Action::parse("open-editor"), Some(Action::OpenEditor));
+        assert_eq!(Action::parse("last-region"), Some(Action::CaptureLastRegion));
+        assert_eq!(
+            Action::parse("auto-capture-toggle"),
+            Some(Action::AutoCaptureToggle)
+        );
+        assert_eq!(Action::parse("stop-recording"), Some(Action::StopRecording));
+        assert_eq!(Action::parse("upload-last"), Some(Action::UploadLast));
+        assert_eq!(Action::parse("pin-last"), Some(Action::PinLast));
         assert_eq!(Action::parse("bogus"), None);
     }
 

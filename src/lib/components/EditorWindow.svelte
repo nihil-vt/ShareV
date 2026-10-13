@@ -13,6 +13,8 @@
     Textbox,
     FabricImage,
     PencilBrush,
+    Shadow,
+    ActiveSelection,
     filters,
     type FabricObject,
     type TMat2D,
@@ -38,7 +40,9 @@
     | 'spotlight'
     | 'cursor'
     | 'cutout'
-    | 'crop';
+    | 'crop'
+    | 'image'
+    | 'emoji';
 
   const tools: { id: Tool; label: string; icon: string }[] = [
     { id: 'select', label: 'Select / move (V)', icon: '⤢' },
@@ -58,10 +62,36 @@
     { id: 'cursor', label: 'Cursor', icon: '➤' },
     { id: 'cutout', label: 'Cut out', icon: '✂' },
     { id: 'crop', label: 'Crop', icon: '⛶' },
+    { id: 'image', label: 'Insert image', icon: '🖼' },
+    { id: 'emoji', label: 'Emoji stamp', icon: '😀' },
   ];
+
+  const EMOJIS = ['😀', '😂', '😍', '🤔', '😎', '😭', '👍', '👎', '👏', '🙏', '❤️', '🔥', '⭐', '✅', '❌', '⚠️', '❓', '❗', '💡', '🎉', '👀', '💯', '🤝', '👋'];
 
   const MAX_UNDO = 30;
   const MIN_SIZE = 4;
+
+  const toolHints: Record<Tool, string> = {
+    select: 'Drag objects to move · corners to resize · double-click text to edit',
+    rect: 'Drag to draw a rectangle',
+    ellipse: 'Drag to draw an ellipse',
+    arrow: 'Drag to draw an arrow',
+    line: 'Drag to draw a line',
+    pen: 'Draw freehand',
+    text: 'Click to place text · double-click it later to edit',
+    highlight: 'Drag to highlight',
+    pixelate: 'Drag a region to pixelate · stays selectable',
+    blur: 'Drag a region to blur · stays selectable',
+    step: 'Click to place a step badge',
+    balloon: 'Click to place a speech balloon',
+    magnify: 'Drag a circle to magnify',
+    spotlight: 'Drag to spotlight an area',
+    cursor: 'Click to stamp a cursor',
+    cutout: 'Drag a region to cut out',
+    crop: 'Drag a region to crop to',
+    image: 'Click the canvas to choose an image to stamp',
+    emoji: 'Click to stamp the emoji',
+  };
 
   let canvasEl = $state<HTMLCanvasElement | null>(null);
   let stageEl = $state<HTMLDivElement | null>(null);
@@ -85,6 +115,12 @@
   let arrowEnd = $state(true);
   let fontFamily = $state('system-ui');
   let fontSize = $state(28);
+  let fontBold = $state(true);
+  let fontItalic = $state(false);
+  let textAlign = $state<'left' | 'center' | 'right'>('left');
+  let cornerRadius = $state(0);
+  let shapeShadow = $state(false);
+  let emojiChoice = $state('😀');
   let magnifyZoom = $state(2);
   let balloonText = $state('');
   let zoom = $state(1);
@@ -289,17 +325,32 @@
   // Shape factories (scene coordinates)
   // -------------------------------------------------------------------------
 
+  function shadowFor(): { shadow?: Shadow } {
+    if (!shapeShadow) return {};
+    return {
+      shadow: new Shadow({
+        color: 'rgba(0, 0, 0, 0.45)',
+        blur: Math.max(2, strokeWidth * 2),
+        offsetX: Math.max(2, strokeWidth),
+        offsetY: Math.max(2, strokeWidth),
+      }),
+    };
+  }
+
   function makeRect(x: number, y: number, w: number, h: number): Rect {
     return new Rect({
       left: x,
       top: y,
       width: Math.max(1, w),
       height: Math.max(1, h),
+      rx: cornerRadius,
+      ry: cornerRadius,
       fill: shapeFill ? color : 'transparent',
       stroke: color,
       strokeWidth,
       strokeUniform: true,
       opacity: opacity / 100,
+      ...shadowFor(),
     });
   }
 
@@ -314,6 +365,7 @@
       strokeWidth,
       strokeUniform: true,
       opacity: opacity / 100,
+      ...shadowFor(),
     });
   }
 
@@ -325,6 +377,7 @@
       strokeDashArray: dashFor() ?? undefined,
       strokeLineCap: 'round',
       opacity: opacity / 100,
+      ...shadowFor(),
     });
   }
 
@@ -385,6 +438,7 @@
       stroke: color,
       strokeWidth: 1,
       opacity: opacity / 100,
+      ...shadowFor(),
     });
   }
 
@@ -408,12 +462,44 @@
       fontFamily,
       fontSize,
       fill: color,
-      fontWeight: 600,
+      fontWeight: fontBold ? 700 : 400,
+      fontStyle: fontItalic ? 'italic' : 'normal',
+      textAlign,
       opacity: opacity / 100,
       editable: true,
       width: Math.max(60, value.length * fontSize * 0.65),
+      ...shadowFor(),
     });
     return tb;
+  }
+
+  function makeEmojiAt(x: number, y: number): Textbox {
+    return new Textbox(emojiChoice, {
+      left: x,
+      top: y,
+      fontSize: Math.max(24, strokeWidth * 8),
+      editable: false,
+      opacity: opacity / 100,
+      width: Math.max(48, strokeWidth * 10),
+    });
+  }
+
+  async function placeImageAt(x: number, y: number) {
+    if (!fcanvas) return;
+    try {
+      const picked = await api.pickFile();
+      if (!picked) return;
+      const dataUrl = await api.readImageBase64(picked);
+      const img = await FabricImage.fromURL(dataUrl);
+      const maxW = Math.max(48, dims.w / 3 || 320);
+      const scale = Math.min(1, maxW / Math.max(1, img.width || 1));
+      img.set({ left: x, top: y, scaleX: scale, scaleY: scale });
+      fcanvas.add(img);
+      fcanvas.setActiveObject(img);
+      fcanvas.requestRenderAll();
+    } catch (err) {
+      toast(String(err), 'error');
+    }
   }
 
   function makeStepAt(x: number, y: number): Group {
@@ -731,6 +817,18 @@
       dragStart = null;
       return;
     }
+    if (tool === 'emoji') {
+      const stamp = makeEmojiAt(p.x, p.y);
+      fcanvas.add(stamp);
+      fcanvas.setActiveObject(stamp);
+      dragStart = null;
+      return;
+    }
+    if (tool === 'image') {
+      dragStart = null;
+      void placeImageAt(p.x, p.y);
+      return;
+    }
 
     // Drag tools: create a live object and resize it on move.
     let obj: FabricObject | null = null;
@@ -834,6 +932,22 @@
     fcanvas.requestRenderAll();
   }
 
+  async function duplicateSelection() {
+    if (!fcanvas) return;
+    const active = fcanvas.getActiveObjects();
+    if (active.length === 0) return;
+    const clones = await Promise.all(active.map((o) => o.clone()));
+    for (const clone of clones) {
+      clone.set({ left: (clone.left ?? 0) + 12, top: (clone.top ?? 0) + 12 });
+      clone.setCoords();
+      fcanvas.add(clone);
+    }
+    fcanvas.setActiveObject(
+      clones.length === 1 ? clones[0] : new ActiveSelection(clones, { canvas: fcanvas }),
+    );
+    fcanvas.requestRenderAll();
+  }
+
   // -------------------------------------------------------------------------
   // Export / save / revert
   // -------------------------------------------------------------------------
@@ -906,6 +1020,11 @@
     getCurrentWindow().close();
   }
 
+  function editingText(): boolean {
+    const active = fcanvas?.getActiveObject();
+    return !!active && active instanceof Textbox && active.isEditing;
+  }
+
   function onKey(e: KeyboardEvent) {
     const target = e.target as HTMLElement | null;
     const typing =
@@ -914,6 +1033,7 @@
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable);
     const mod = e.ctrlKey || e.metaKey;
+    const inTextEdit = editingText();
 
     if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
@@ -927,14 +1047,23 @@
     } else if (mod && e.key.toLowerCase() === 'c' && !typing) {
       e.preventDefault();
       void copy();
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
+    } else if (mod && e.key.toLowerCase() === 'd' && !typing) {
+      e.preventDefault();
+      void duplicateSelection();
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && !inTextEdit) {
       e.preventDefault();
       deleteSelection();
-    } else if (e.key.toLowerCase() === 'v' && !typing && !mod) {
+    } else if (e.key.toLowerCase() === 'v' && !typing && !mod && !inTextEdit) {
       selectTool('select');
+    } else if (e.key === 'Enter' && !typing && !mod && !inTextEdit) {
+      e.preventDefault();
+      void save();
     } else if (e.key === 'Escape') {
-      if (fcanvas?.getActiveObject() && tool === 'select') fcanvas.discardActiveObject();
-      else if (!typing) close();
+      if (inTextEdit) {
+        (fcanvas?.getActiveObject() as Textbox | null | undefined)?.exitEditing?.();
+      } else if (fcanvas?.getActiveObject() && tool === 'select') {
+        fcanvas.discardActiveObject();
+      } else if (!typing) close();
     }
   }
 
@@ -956,11 +1085,15 @@
     <div class="title-group">
       <h1>Image Editor</h1>
       {#if !loading && dims.w > 0}
-        <p class="sub">{dims.w} × {dims.h}px · objects are selectable — drag to move, corners to resize</p>
+        <p class="sub">{dims.w} × {dims.h}px</p>
       {/if}
     </div>
     <div class="head-actions">
       <button class="ghost" onclick={() => selectTool('select')} class:active-tool={tool === 'select'} title="Select (V)">Select</button>
+      <button class="ghost" onclick={() => void duplicateSelection()} title="Duplicate selection (Ctrl+D)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Duplicate
+      </button>
       <button class="ghost" onclick={() => deleteSelection()} title="Delete selection (Del)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         Delete
@@ -993,23 +1126,18 @@
   </header>
 
   <div class="editor-body">
-    <aside class="tool-panel">
-      <div class="tool-section">
-        <span class="section-label">Tools</span>
-        <div class="tool-grid">
-          {#each tools as item (item.id)}
-            <button
-              class="tool-btn"
-              class:active={tool === item.id}
-              title={item.label}
-              onclick={() => selectTool(item.id)}
-            >
-              <span class="tool-icon">{item.icon}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    </aside>
+    <div class="toolbar-strip" role="toolbar" aria-label="Annotation tools">
+      {#each tools as item (item.id)}
+        <button
+          class="tool-btn"
+          class:active={tool === item.id}
+          title={item.label}
+          onclick={() => selectTool(item.id)}
+        >
+          <span class="tool-icon">{item.icon}</span>
+        </button>
+      {/each}
+    </div>
 
     <div class="canvas-area">
       <div class="zoom-bar">
@@ -1017,6 +1145,7 @@
         <button class="zoom-btn zoom-label" onclick={fitZoom} title="Fit to window">{zoomLabel}</button>
         <button class="zoom-btn" onclick={zoomIn} title="Zoom in">+</button>
         <button class="zoom-btn" onclick={zoomActual} title="Actual size (100%)">1:1</button>
+        <span class="tool-hint">{toolHints[tool]}</span>
       </div>
       <div class="stage" bind:this={stageEl}>
         <canvas bind:this={canvasEl}></canvas>
@@ -1026,28 +1155,27 @@
       </div>
     </div>
 
-    <aside class="options-panel">
+    <div class="options-strip">
       <div class="options-section">
         <span class="section-label">Color</span>
         <div class="color-row">
           <input type="color" bind:value={color} onchange={applyToolMode} />
-          <span class="color-value">{color}</span>
-        </div>
-        <div class="preset-colors">
-          <button class="swatch" style="background:#ff3b30" onclick={() => { color = '#ff3b30'; applyToolMode(); }} title="Red"></button>
-          <button class="swatch" style="background:#ff9500" onclick={() => { color = '#ff9500'; applyToolMode(); }} title="Orange"></button>
-          <button class="swatch" style="background:#ffcc00" onclick={() => { color = '#ffcc00'; applyToolMode(); }} title="Yellow"></button>
-          <button class="swatch" style="background:#34c759" onclick={() => { color = '#34c759'; applyToolMode(); }} title="Green"></button>
-          <button class="swatch" style="background:#007aff" onclick={() => { color = '#007aff'; applyToolMode(); }} title="Blue"></button>
-          <button class="swatch" style="background:#af52de" onclick={() => { color = '#af52de'; applyToolMode(); }} title="Purple"></button>
-          <button class="swatch" style="background:#ffffff" onclick={() => { color = '#ffffff'; applyToolMode(); }} title="White"></button>
-          <button class="swatch" style="background:#000000" onclick={() => { color = '#000000'; applyToolMode(); }} title="Black"></button>
+          <div class="preset-colors">
+            <button class="swatch" style="background:#ff3b30" onclick={() => { color = '#ff3b30'; applyToolMode(); }} title="Red"></button>
+            <button class="swatch" style="background:#ff9500" onclick={() => { color = '#ff9500'; applyToolMode(); }} title="Orange"></button>
+            <button class="swatch" style="background:#ffcc00" onclick={() => { color = '#ffcc00'; applyToolMode(); }} title="Yellow"></button>
+            <button class="swatch" style="background:#34c759" onclick={() => { color = '#34c759'; applyToolMode(); }} title="Green"></button>
+            <button class="swatch" style="background:#007aff" onclick={() => { color = '#007aff'; applyToolMode(); }} title="Blue"></button>
+            <button class="swatch" style="background:#af52de" onclick={() => { color = '#af52de'; applyToolMode(); }} title="Purple"></button>
+            <button class="swatch" style="background:#ffffff" onclick={() => { color = '#ffffff'; applyToolMode(); }} title="White"></button>
+            <button class="swatch" style="background:#000000" onclick={() => { color = '#000000'; applyToolMode(); }} title="Black"></button>
+          </div>
         </div>
       </div>
 
       <div class="options-section">
         <span class="section-label">Size — {strokeWidth}px</span>
-        <input type="range" min="1" max="24" bind:value={strokeWidth} onchange={applyToolMode} />
+        <input class="range-fixed" type="range" min="1" max="24" bind:value={strokeWidth} onchange={applyToolMode} />
         <div class="size-presets">
           <button class="size-preset" class:active={strokeWidth === 2} onclick={() => { strokeWidth = 2; applyToolMode(); }}>S</button>
           <button class="size-preset" class:active={strokeWidth === 4} onclick={() => { strokeWidth = 4; applyToolMode(); }}>M</button>
@@ -1059,32 +1187,46 @@
       {#if tool === 'text'}
         <div class="options-section">
           <span class="section-label">Text</span>
-          <input type="text" bind:value={text} placeholder="Enter text…" />
-          <p class="hint">Click on the image to place — double-click it later to edit</p>
+          <input class="text-fluid" type="text" bind:value={text} placeholder="Enter text…" />
+        </div>
+      {/if}
+
+      {#if tool === 'emoji'}
+        <div class="options-section">
+          <span class="section-label">Emoji</span>
+          <div class="emoji-row">
+            {#each EMOJIS as e (e)}
+              <button class="emoji-btn" class:active={emojiChoice === e} onclick={() => (emojiChoice = e)}>{e}</button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      {#if tool === 'image'}
+        <div class="options-section">
+          <span class="section-label">Image</span>
+          <span class="hint-inline">Click the canvas to choose a file</span>
         </div>
       {/if}
 
       {#if tool === 'balloon'}
         <div class="options-section">
-          <span class="section-label">Balloon Text</span>
-          <input type="text" bind:value={balloonText} placeholder="Enter balloon text…" />
-          <p class="hint">Click on the image to place a speech balloon</p>
+          <span class="section-label">Balloon</span>
+          <input class="text-fluid" type="text" bind:value={balloonText} placeholder="Enter balloon text…" />
         </div>
       {/if}
 
       {#if tool === 'magnify'}
         <div class="options-section">
           <span class="section-label">Zoom — {magnifyZoom}x</span>
-          <input type="range" min="1.5" max="5" step="0.5" bind:value={magnifyZoom} />
-          <p class="hint">Drag a circle on the image to magnify it</p>
+          <input class="range-fixed" type="range" min="1.5" max="5" step="0.5" bind:value={magnifyZoom} />
         </div>
       {/if}
 
       {#if tool === 'blur' || tool === 'pixelate'}
         <div class="options-section">
           <span class="section-label">Intensity</span>
-          <input type="range" min="1" max="24" bind:value={strokeWidth} />
-          <p class="hint">Drag a region — it stays selectable so you can move it after</p>
+          <input class="range-fixed" type="range" min="1" max="24" bind:value={strokeWidth} />
         </div>
       {/if}
 
@@ -1094,6 +1236,23 @@
           <label class="toggle-row">
             <input type="checkbox" bind:checked={shapeFill} />
             <span>Fill shape with color</span>
+          </label>
+        </div>
+      {/if}
+
+      {#if tool === 'rect'}
+        <div class="options-section">
+          <span class="section-label">Corners — {cornerRadius}px</span>
+          <input class="range-fixed" type="range" min="0" max="48" bind:value={cornerRadius} />
+        </div>
+      {/if}
+
+      {#if tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'text'}
+        <div class="options-section">
+          <span class="section-label">Shadow</span>
+          <label class="toggle-row">
+            <input type="checkbox" bind:checked={shapeShadow} />
+            <span>Drop shadow</span>
           </label>
         </div>
       {/if}
@@ -1139,30 +1298,33 @@
             <option value="cursive">Cursive</option>
           </select>
           <span class="section-label">Font size — {fontSize}px</span>
-          <input type="range" min="10" max="96" bind:value={fontSize} />
+          <input class="range-fixed" type="range" min="10" max="96" bind:value={fontSize} />
+          {#if tool === 'text'}
+            <label class="toggle-row">
+              <input type="checkbox" bind:checked={fontBold} />
+              <span>Bold</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" bind:checked={fontItalic} />
+              <span>Italic</span>
+            </label>
+            <span class="section-label">Alignment</span>
+            <div class="line-styles">
+              <button class="line-btn" class:active={textAlign === 'left'} onclick={() => (textAlign = 'left')} title="Left">⇤</button>
+              <button class="line-btn" class:active={textAlign === 'center'} onclick={() => (textAlign = 'center')} title="Center">⇔</button>
+              <button class="line-btn" class:active={textAlign === 'right'} onclick={() => (textAlign = 'right')} title="Right">⇥</button>
+            </div>
+          {/if}
         </div>
       {/if}
 
       {#if tool !== 'crop' && tool !== 'cursor' && tool !== 'cutout' && tool !== 'select'}
         <div class="options-section">
           <span class="section-label">Opacity — {opacity}%</span>
-          <input type="range" min="10" max="100" bind:value={opacity} />
+          <input class="range-fixed" type="range" min="10" max="100" bind:value={opacity} />
         </div>
       {/if}
-
-      <div class="options-section shortcuts">
-        <span class="section-label">Shortcuts</span>
-        <div class="shortcut-list">
-          <div><kbd>V</kbd> Select</div>
-          <div><kbd>Del</kbd> Delete selection</div>
-          <div><kbd>Ctrl+Z</kbd> Undo</div>
-          <div><kbd>Ctrl+Y</kbd> Redo</div>
-          <div><kbd>Ctrl+S</kbd> Save</div>
-          <div><kbd>Ctrl+C</kbd> Copy</div>
-          <div><kbd>Esc</kbd> Close</div>
-        </div>
-      </div>
-    </aside>
+    </div>
   </div>
 </section>
 
@@ -1188,16 +1350,43 @@
     margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
+    white-space: nowrap;
+  }
+  .title-group {
+    min-width: 0;
+    margin-right: 0.6rem;
   }
   .sub {
     margin: 0;
     font-size: 0.72rem;
     color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .head-actions {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    flex-shrink: 0;
+  }
+  /* Icon-only header buttons on narrow windows so nothing (incl. ✕) clips. */
+  @media (max-width: 1100px) {
+    .head-actions {
+      gap: 0.25rem;
+    }
+    .head-actions button {
+      font-size: 0;
+      gap: 0;
+      padding: 0.4rem 0.45rem;
+    }
+    .head-actions button svg {
+      width: 16px;
+      height: 16px;
+    }
+    .sub {
+      display: none;
+    }
   }
   .separator {
     width: 1px;
@@ -1208,46 +1397,30 @@
 
   /* ---- Body: 3-column layout ---- */
   .editor-body {
-    display: grid;
-    grid-template-columns: 52px 1fr 240px;
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-height: 0;
   }
 
-  /* ---- Left tool panel ---- */
-  .tool-panel {
+  /* ---- Top toolbar strip (compact quick-edit dialog) ---- */
+  .toolbar-strip {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 8px;
     background: var(--surface);
-    border-right: 1px solid var(--border);
-    padding: 0.5rem 0.4rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    overflow-y: auto;
-  }
-  .tool-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-  .section-label {
-    font-size: 0.6rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-dim);
-    text-align: center;
-    padding: 0.2rem 0;
-  }
-  .tool-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: thin;
   }
   .tool-btn {
     display: grid;
     place-items: center;
-    width: 100%;
-    aspect-ratio: 1;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
     border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
@@ -1266,7 +1439,7 @@
     color: var(--accent);
   }
   .tool-icon {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     line-height: 1;
   }
 
@@ -1333,48 +1506,58 @@
     font-size: 0.9rem;
   }
 
-  /* ---- Right options panel ---- */
-  .options-panel {
+  /* ---- Bottom options strip ---- */
+  .options-strip {
     background: var(--surface);
-    border-left: 1px solid var(--border);
-    padding: 0.75rem;
+    border-top: 1px solid var(--border);
+    padding: 0.4rem 0.75rem;
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    overflow-y: auto;
+    align-items: center;
+    gap: 0.4rem 1.1rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: thin;
+    min-height: 54px;
   }
   .options-section {
     display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
   }
   .options-section .section-label {
     text-align: left;
     padding: 0;
+    white-space: nowrap;
+  }
+  .section-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    padding: 0.2rem 0;
   }
   .color-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
   .color-row input[type='color'] {
-    width: 36px;
-    height: 28px;
+    width: 34px;
+    height: 26px;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--surface-3);
     cursor: pointer;
-  }
-  .color-value {
-    font-size: 0.72rem;
-    color: var(--text-dim);
-    font-family: ui-monospace, monospace;
+    flex-shrink: 0;
   }
   .preset-colors {
     display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
+    gap: 0.25rem;
+    flex-wrap: nowrap;
   }
   .swatch {
     width: 22px;
@@ -1389,16 +1572,20 @@
     transform: scale(1.15);
   }
   .options-section input[type='range'] {
-    width: 100%;
+    width: 110px;
     accent-color: var(--accent);
+    flex-shrink: 0;
+  }
+  .options-section input[type='range'].range-fixed {
+    width: 110px;
   }
   .size-presets {
     display: flex;
-    gap: 0.3rem;
+    gap: 0.25rem;
+    flex-shrink: 0;
   }
   .size-preset {
-    flex: 1;
-    padding: 0.3rem 0;
+    padding: 0.25rem 0.5rem;
     font-size: 0.7rem;
     font-weight: 600;
     border-radius: 6px;
@@ -1418,22 +1605,36 @@
     color: var(--accent);
   }
   .options-section input[type='text'] {
-    width: 100%;
-    padding: 0.4rem 0.55rem;
+    width: 150px;
+    padding: 0.35rem 0.5rem;
     border-radius: 7px;
     border: 1px solid var(--border);
     background: var(--surface-3);
     color: var(--text);
     font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  .options-section input[type='text'].text-fluid {
+    width: clamp(140px, 18vw, 240px);
   }
   .options-section input[type='text']:focus {
     outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
     outline-offset: 1px;
   }
-  .hint {
+  .hint-inline {
     margin: 0;
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .tool-hint {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-left: 0.8rem;
   }
   .toggle-row {
     display: flex;
@@ -1447,6 +1648,33 @@
     accent-color: var(--accent);
     width: 0.9rem;
     height: 0.9rem;
+  }
+  .emoji-row {
+    display: flex;
+    gap: 0.15rem;
+    max-width: 300px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .emoji-btn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    font-size: 1.05rem;
+    padding: 0;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+  }
+  .emoji-btn:hover {
+    background: var(--surface-2);
+  }
+  .emoji-btn.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
   .line-styles {
     display: flex;
@@ -1474,37 +1702,15 @@
     color: var(--accent);
   }
   .options-section select {
-    width: 100%;
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.45rem;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--surface-3);
     color: var(--text);
-    font-size: 0.78rem;
+    font-size: 0.76rem;
+    max-width: 130px;
+    flex-shrink: 0;
   }
-  .shortcuts {
-    margin-top: auto;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border);
-  }
-  .shortcut-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.7rem;
-    color: var(--text-dim);
-  }
-  kbd {
-    display: inline-block;
-    padding: 0.1rem 0.3rem;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.65rem;
-    font-family: ui-monospace, monospace;
-    margin-right: 0.3rem;
-  }
-
   /* ---- Buttons ---- */
   button {
     display: inline-flex;
@@ -1547,10 +1753,6 @@
   button.active-tool {
     border-color: var(--accent);
     color: var(--accent);
-  }
-  .tool-grid .tool-btn {
-    display: grid;
-    padding: 0;
   }
   .zoom-bar .zoom-btn {
     display: inline-flex;

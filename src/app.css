@@ -42,99 +42,11 @@ body {
 }
 
 .app {
-  display: grid;
-  grid-template-columns: 220px 1fr;
   height: 100vh;
   overflow: hidden;
 }
 
-/* ---- Sidebar ---- */
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  padding: 0.75rem 0.5rem;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.25rem 0.5rem 0.75rem;
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
-}
-.logo {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(140deg, var(--linux-orange), var(--linux-yellow));
-  color: #1a1a2e;
-  font-size: 0.95rem;
-  font-weight: 800;
-}
-.sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.65rem;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.12s ease;
-}
-.nav:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-.nav.active {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--text);
-}
-.nav .icon {
-  width: 1.2rem;
-  text-align: center;
-  font-size: 1rem;
-  color: var(--accent);
-}
-.badge {
-  margin-left: auto;
-  font-size: 0.68rem;
-  background: var(--surface-3);
-  border-radius: 999px;
-  padding: 0.05rem 0.4rem;
-  color: var(--text-dim);
-}
-.spacer {
-  flex: 1;
-}
-.foot {
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  padding: 0.4rem 0.65rem;
-  border-top: 1px solid var(--border);
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-}
-
 /* ---- Content ---- */
-.content {
-  overflow-y: auto;
-  padding: 1.5rem 1.75rem 3rem;
-}
 .loading {
   display: grid;
   place-items: center;
@@ -247,16 +159,6 @@ button:focus-visible {
   outline-offset: 1px;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
-}
-
-@media (max-width: 860px) {
-  .app {
-    grid-template-columns: 70px 1fr;
-  }
-  .sidebar .brand .name,
-  .nav span:not(.icon):not(.badge) {
-    display: none;
-  }
 }
 
 /* ---- Pin windows ---- */

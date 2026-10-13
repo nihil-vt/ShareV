@@ -21,6 +21,11 @@ pub enum EffectKind {
     CanvasResize,
     Blur,
     RoundedCorners,
+    Resize,
+    Grayscale,
+    Sepia,
+    Adjust,
+    Rotate,
 }
 
 impl EffectKind {
@@ -33,6 +38,11 @@ impl EffectKind {
             EffectKind::CanvasResize => "canvasResize",
             EffectKind::Blur => "blur",
             EffectKind::RoundedCorners => "roundedCorners",
+            EffectKind::Resize => "resize",
+            EffectKind::Grayscale => "grayscale",
+            EffectKind::Sepia => "sepia",
+            EffectKind::Adjust => "adjust",
+            EffectKind::Rotate => "rotate",
         }
     }
 
@@ -44,6 +54,11 @@ impl EffectKind {
             "canvasresize" | "resize" => Some(EffectKind::CanvasResize),
             "blur" => Some(EffectKind::Blur),
             "roundedcorners" | "rounded" => Some(EffectKind::RoundedCorners),
+            "imageresize" | "scaler" => Some(EffectKind::Resize),
+            "grayscale" | "greyscale" | "blackandwhite" => Some(EffectKind::Grayscale),
+            "sepia" => Some(EffectKind::Sepia),
+            "adjust" | "brightness" | "contrast" => Some(EffectKind::Adjust),
+            "rotate" | "flip" => Some(EffectKind::Rotate),
             _ => None,
         }
     }
@@ -155,6 +170,60 @@ impl Default for RoundedCornersParams {
     }
 }
 
+/// Image resize parameters. A zero dimension keeps the aspect ratio against
+/// the other one; both zero disables the effect.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ResizeParams {
+    pub width: u32,
+    pub height: u32,
+    pub keep_aspect: bool,
+}
+
+impl Default for ResizeParams {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            keep_aspect: true,
+        }
+    }
+}
+
+/// Brightness/contrast adjustment parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AdjustParams {
+    /// -100..100, added to every channel.
+    pub brightness: i32,
+    /// Contrast factor where 0.0 is flat grey and 1.0 is unchanged.
+    pub contrast: f32,
+}
+
+impl Default for AdjustParams {
+    fn default() -> Self {
+        Self {
+            brightness: 0,
+            contrast: 1.0,
+        }
+    }
+}
+
+/// Rotation/flip. One of: none, cw90, cw180, cw270, flipH, flipV.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RotateParams {
+    pub mode: String,
+}
+
+impl Default for RotateParams {
+    fn default() -> Self {
+        Self {
+            mode: "cw90".into(),
+        }
+    }
+}
+
 /// Ordered list of effects to apply, with their parameters.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -166,6 +235,9 @@ pub struct EffectsConfig {
     pub canvas_resize: CanvasResizeParams,
     pub blur: BlurParams,
     pub rounded_corners: RoundedCornersParams,
+    pub resize: ResizeParams,
+    pub adjust: AdjustParams,
+    pub rotate: RotateParams,
 }
 
 fn parse_hex_color(hex: &str) -> Result<[u8; 4]> {
@@ -201,10 +273,89 @@ pub fn apply_effects(image: &DynamicImage, config: &EffectsConfig) -> DynamicIma
             EffectKind::RoundedCorners => {
                 img = apply_rounded_corners(&img, &config.rounded_corners)
             }
+            EffectKind::Resize => img = apply_resize(&img, &config.resize),
+            EffectKind::Grayscale => img = img.grayscale(),
+            EffectKind::Sepia => img = apply_sepia(&img),
+            EffectKind::Adjust => img = apply_adjust(&img, &config.adjust),
+            EffectKind::Rotate => img = apply_rotate(&img, &config.rotate),
         }
     }
 
     img
+}
+
+fn apply_resize(image: &DynamicImage, params: &ResizeParams) -> DynamicImage {
+    let (w, h) = image.dimensions();
+    if w == 0 || h == 0 {
+        return image.clone();
+    }
+    let (mut tw, mut th) = (params.width, params.height);
+    if tw == 0 && th == 0 {
+        return image.clone();
+    }
+    if params.keep_aspect {
+        if tw == 0 {
+            tw = ((w as u64 * th as u64) / h.max(1) as u64).max(1) as u32;
+        } else if th == 0 {
+            th = ((h as u64 * tw as u64) / w.max(1) as u64).max(1) as u32;
+        } else {
+            let scale = (tw as f32 / w as f32).min(th as f32 / h as f32).max(0.01);
+            tw = ((w as f32 * scale).round() as u32).max(1);
+            th = ((h as f32 * scale).round() as u32).max(1);
+        }
+    } else {
+        if tw == 0 {
+            tw = w;
+        }
+        if th == 0 {
+            th = h;
+        }
+    }
+    if tw == w && th == h {
+        return image.clone();
+    }
+    image.resize(tw, th, image::imageops::FilterType::Triangle)
+}
+
+fn apply_sepia(image: &DynamicImage) -> DynamicImage {
+    let mut rgba = image.to_rgba8();
+    for pixel in rgba.pixels_mut() {
+        let [r, g, b, a] = pixel.0;
+        let (r, g, b) = (r as f32, g as f32, b as f32);
+        pixel.0 = [
+            (0.393 * r + 0.769 * g + 0.189 * b).clamp(0.0, 255.0) as u8,
+            (0.349 * r + 0.686 * g + 0.168 * b).clamp(0.0, 255.0) as u8,
+            (0.272 * r + 0.534 * g + 0.131 * b).clamp(0.0, 255.0) as u8,
+            a,
+        ];
+    }
+    DynamicImage::ImageRgba8(rgba)
+}
+
+fn apply_adjust(image: &DynamicImage, params: &AdjustParams) -> DynamicImage {
+    let mut img = image.to_rgba8();
+    let brightness = params.brightness.clamp(-100, 100);
+    if brightness != 0 {
+        img = image::imageops::brighten(&img, brightness);
+    }
+    let contrast = params.contrast.clamp(0.0, 10.0);
+    if (contrast - 1.0).abs() > f32::EPSILON {
+        // imageops takes 0.0 as unchanged, positive adds contrast.
+        img = image::imageops::contrast(&img, (contrast - 1.0) * 100.0);
+    }
+    DynamicImage::ImageRgba8(img)
+}
+
+fn apply_rotate(image: &DynamicImage, params: &RotateParams) -> DynamicImage {
+    let rgba = image.to_rgba8();
+    let out = match params.mode.trim().to_ascii_lowercase().as_str() {
+        "cw180" | "180" => image::imageops::rotate180(&rgba),
+        "cw270" | "270" | "ccw90" => image::imageops::rotate270(&rgba),
+        "fliph" | "horizontal" => image::imageops::flip_horizontal(&rgba),
+        "flipv" | "vertical" => image::imageops::flip_vertical(&rgba),
+        _ => image::imageops::rotate90(&rgba),
+    };
+    DynamicImage::ImageRgba8(out)
 }
 
 fn apply_shadow(image: &DynamicImage, params: &ShadowParams) -> DynamicImage {
@@ -491,5 +642,82 @@ mod tests {
         };
         let result = apply_effects(&img, &config);
         assert_eq!(result.dimensions(), (20, 20));
+    }
+
+    #[test]
+    fn parses_new_effect_kinds() {
+        assert_eq!(EffectKind::parse("resize"), Some(EffectKind::CanvasResize));
+        assert_eq!(EffectKind::parse("scaler"), Some(EffectKind::Resize));
+        assert_eq!(EffectKind::parse("grayscale"), Some(EffectKind::Grayscale));
+        assert_eq!(EffectKind::parse("sepia"), Some(EffectKind::Sepia));
+        assert_eq!(EffectKind::parse("brightness"), Some(EffectKind::Adjust));
+        assert_eq!(EffectKind::parse("flip"), Some(EffectKind::Rotate));
+    }
+
+    #[test]
+    fn applies_resize_keeping_aspect() {
+        let img = DynamicImage::new_rgba8(200, 100);
+        let config = EffectsConfig {
+            effects: vec![EffectKind::Resize],
+            resize: ResizeParams {
+                width: 100,
+                height: 0,
+                keep_aspect: true,
+            },
+            ..Default::default()
+        };
+        assert_eq!(apply_effects(&img, &config).dimensions(), (100, 50));
+    }
+
+    #[test]
+    fn empty_resize_is_a_noop() {
+        let img = DynamicImage::new_rgba8(60, 40);
+        let config = EffectsConfig {
+            effects: vec![EffectKind::Resize],
+            ..Default::default()
+        };
+        assert_eq!(apply_effects(&img, &config).dimensions(), (60, 40));
+    }
+
+    #[test]
+    fn applies_grayscale_and_sepia() {
+        let mut img = DynamicImage::new_rgba8(4, 4);
+        for p in img.as_mut_rgba8().unwrap().pixels_mut() {
+            *p = image::Rgba([200, 100, 50, 255]);
+        }
+        let gray = EffectsConfig {
+            effects: vec![EffectKind::Grayscale],
+            ..Default::default()
+        };
+        let g = apply_effects(&img, &gray).to_rgba8();
+        let px = g.get_pixel(0, 0).0;
+        assert_eq!(px[0], px[1]);
+        assert_eq!(px[1], px[2]);
+        let sepia = EffectsConfig {
+            effects: vec![EffectKind::Sepia],
+            ..Default::default()
+        };
+        let s = apply_effects(&img, &sepia).to_rgba8().get_pixel(0, 0).0;
+        assert!(s[0] >= s[1] && s[1] >= s[2]);
+    }
+
+    #[test]
+    fn applies_adjust_and_rotate() {
+        let img = DynamicImage::new_rgba8(30, 10);
+        let config = EffectsConfig {
+            effects: vec![EffectKind::Adjust],
+            adjust: AdjustParams {
+                brightness: 10,
+                contrast: 1.2,
+            },
+            ..Default::default()
+        };
+        assert_eq!(apply_effects(&img, &config).dimensions(), (30, 10));
+        let config = EffectsConfig {
+            effects: vec![EffectKind::Rotate],
+            rotate: RotateParams { mode: "cw90".into() },
+            ..Default::default()
+        };
+        assert_eq!(apply_effects(&img, &config).dimensions(), (10, 30));
     }
 }

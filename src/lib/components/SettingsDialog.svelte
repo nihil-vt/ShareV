@@ -1,7 +1,7 @@
 <script lang="ts">
   import SettingsView from './SettingsView.svelte';
 
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose, section = null }: { onClose: () => void; section?: string | null } = $props();
 </script>
 
 <div
@@ -20,11 +20,17 @@
     aria-label="Settings"
     tabindex="-1"
   >
-    <button class="dialog-close" onclick={onClose} title="Close (Esc)" aria-label="Close settings">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
+    <div class="dialog-head">
+      <div class="dialog-title">
+        <h2>Settings</h2>
+        <p class="sub">Changes are written to your ShareV config file.</p>
+      </div>
+      <button class="dialog-close" onclick={onClose} title="Close (Esc)" aria-label="Close settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
     <div class="dialog-body">
-      <SettingsView />
+      <SettingsView section={section} hideHeader />
     </div>
   </div>
 </div>
@@ -57,11 +63,9 @@
     to { transform: scale(1); opacity: 1; }
   }
   .dialog-close {
-    position: absolute;
-    top: 0.6rem;
-    right: 0.6rem;
     display: grid;
     place-items: center;
+    flex-shrink: 0;
     width: 30px;
     height: 30px;
     border: 1px solid var(--border);
@@ -69,7 +73,6 @@
     background: var(--surface-2);
     color: var(--text-dim);
     cursor: pointer;
-    z-index: 2;
   }
   .dialog-close:hover {
     color: var(--text);
@@ -77,6 +80,26 @@
   }
   .dialog-body {
     overflow-y: auto;
-    padding: 0.25rem;
+    padding: 0 0.9rem 0.9rem;
+  }
+  .dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.85rem 0.9rem 0.7rem;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.8rem;
+  }
+  .dialog-title h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .dialog-title .sub {
+    margin: 0.15rem 0 0;
+    font-size: 0.72rem;
+    color: var(--text-dim);
   }
 </style>

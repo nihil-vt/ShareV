@@ -53,3 +53,11 @@ tauri-plugin-process = "2"
 # XDG Desktop Portal (Wayland global shortcuts).
 ashpd = { version = "0.13.13", features = ["global_shortcuts"] }
 futures-util = "0.3"
+sha2 = "0.11.1"
+md-5 = "0.11.0"
+blake3 = "1.8.7"
+notify = "8.2.0"
+kamadak-exif = "0.6.1"
+rqrr = "0.11.0"
+qrcode = "0.14.1"
+urlencoding = "2.1.3"

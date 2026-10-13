@@ -8,6 +8,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hash checker** tool: MD5, SHA-256, SHA-512, BLAKE3 of any file, copyable.
+- **Image combiner** tool: joins images side-by-side or stacked with
+  spacing and background, saved to the save directory and recorded
+  in history.
+- **QR code** tool: generate from text/URL (size slider) and decode one
+  or more codes from an image; both copyable.
+- **Image metadata** viewer: format, dimensions, byte size, mtime and
+  EXIF tags, each row copyable.
+- **Watch folders** tool: notify-driven per-folder watchers that land
+  new image files in history with a toast and an event feed.
+- **URL shortener** tool: is.gd shortening with error passthrough.
+- **URL shortener** also works as an after-upload task ("Shorten URL first"):
+  the copy/open/notify tasks all see the shortened link, not the raw one.
+- **10 URL shortener providers** with per-provider credential forms
+  (ShareX parity): 4 free (is.gd, v.gd, tinyurl, Zero Width Shortener)
+  and 6 credentialed (bitly, kutt, polr, YOURLS, Firebase Dynamic
+  Links, custom) — provider picker + fields in the Shorten URL dialog,
+  saved in config and reused by the after-upload task. Free providers
+  fail over to each other (is.gd and v.gd run on one database: a
+  single outage kills both). Deliberately skipped: 2.gp, qr.net,
+  nl.cm — dead/unverifiable endpoints. Note: `api.zws.im` is
+  Railway-hosted and refuses TLS from some networks; its errors
+  surface verbatim.
+- Folder picker command backing watch folders.
+
+### Fixed
+
+- Main window layout collapse: a leftover global `.app` grid (220px sidebar
+  track) squeezed the new layout into a narrow column and hid the history
+  side. Removed all dead sidebar-era global CSS.
+- Clipped controls: editor header collapses to icon-only buttons under 1100px
+  (close ✕ no longer pushed out), recorder bar wraps, dropdown items ellipsis
+  instead of spilling.
+- Settings dialog close button moved into normal flow (was absolutely
+  positioned and clipped); hotkey binding Remove buttons can't squeeze.
+- Editor is a proper dialog citizen (no taskbar entry) with documented
+  compositor float rules so it floats instead of tiling.
+- On Hyprland the editor floats itself over IPC — zero user setup.
+- Image effects grow 7 → 12 (resize, grayscale, sepia, brightness/contrast,
+  rotate/flip) with settings UI and tests.
+- **Screen color picker** tool (fullscreen grab without saving, click for
+  HEX/RGB, keyboard accessible).
+
+### Added
+- ShareX-parity capture menu: **Last region** (replays the previous selection;
+  label shows its dimensions) and a **Fullscreen on monitor…** submenu.
+- **Upload** split button: Upload last capture, Upload file… (file picker),
+  Copy last link.
+- **Show quick task menu** after-capture task: per-capture action popup.
+- Settings dialog jumps to sections (Task/Hotkey/Application settings buttons).
+- **Abort recording** (discards without saving) in the recorder bar and tray;
+  recorder bar shows FPS and audio mode; tray gains an auto-capture toggle.
+- **Tools** split button: Run OCR on last capture, Pin last capture to screen.
+- **Save as…** (save dialog) in the quick task menu and history preview.
+- Tray **Enable/Disable Hotkeys** toggle.
+- **Auto capture dialog** (target, interval, limits, change detection).
+- **OCR image… dialog** (pick file, language, copyable result).
+- History **thumbnail view** toggle; tray **Capture Delay** submenu.
+- **Upload folder / text / URL** destinations (temp staging through the
+  configured uploader); Upload menu and text/URL dialog.
+- Recorder **pause/resume** (SIGSTOP/SIGCONT, gaps excluded from duration,
+  frozen timer, tray-safe stop).
+- Editor: **insert image**, **emoji stamps**, **duplicate** (Ctrl+D), text
+  bold/italic/alignment, rectangle **corner radius**, **drop shadows**.
+- Hotkeys grow 6 → 12 actions (last region, stop/discard recording, auto
+  capture toggle, upload/pin last); tray **Image Uploader** quick-switch.
+
+### Added
 
 - **Feature toggles** — optional features such as OCR can be turned off in
   Settings (`[features]` in the config), so unneeded system dependencies never

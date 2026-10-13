@@ -10,10 +10,12 @@ import type {
   EditorInfo,
   Geometry,
   HistoryEntry,
+  ImageMetadata,
   MonitorInfo,
   PinInfo,
   RecordingInfo,
   RecordingResult,
+  ShortenCreds,
   UploadOutcome,
   WindowInfo,
 } from './types';
@@ -109,6 +111,9 @@ export const api = {
 
   uploadPath: (path: string) => invoke<UploadOutcome>('upload_path', { path }),
   uploadLast: () => invoke<UploadOutcome | null>('upload_last'),
+  uploadText: (text: string) => invoke<UploadOutcome>('upload_text', { text }),
+  uploadUrl: (url: string) => invoke<UploadOutcome>('upload_url', { url }),
+  uploadFolder: (path: string) => invoke<UploadOutcome[]>('upload_folder', { path }),
 
   startRecording: (kind: CaptureKind, options: CaptureOptions = {}) =>
     invoke<RecordingInfo>('start_recording', {
@@ -118,8 +123,29 @@ export const api = {
       windowId: options.windowId ?? null,
     }),
   stopRecording: () => invoke<RecordingResult>('stop_recording'),
+  abortRecording: () => invoke<void>('abort_recording'),
+  pauseRecording: (paused: boolean) => invoke<RecordingInfo>('pause_recording', { paused }),
   recordingStatus: () => invoke<RecordingInfo | null>('recording_status'),
   listAudioDevices: () => invoke<AudioDevice[]>('list_audio_devices'),
+
+  lastRegion: () => invoke<Geometry | null>('last_region'),
+  pickFile: () => invoke<string | null>('pick_file'),
+  pickFolder: () => invoke<string | null>('pick_folder'),
+  hashFile: (path: string) => invoke<Record<string, string>>('hash_file', { path }),
+  combineImages: (paths: string[], direction: string, spacing: number, background: string) =>
+    invoke<string>('combine_images', { paths, direction, spacing, background }),
+  qrEncode: (text: string, size: number) =>
+    invoke<string>('qr_encode', { text, size }),
+  qrDecode: (path: string) => invoke<string[]>('qr_decode', { path }),
+  metadataImage: (path: string) => invoke<ImageMetadata>('metadata_image', { path }),
+  watchAdd: (path: string) => invoke<boolean>('watch_folder_add', { path }),
+  watchRemove: (path: string) => invoke<boolean>('watch_folder_remove', { path }),
+  watchList: () => invoke<string[]>('watch_folder_list'),
+  shortenUrl: (url: string) => invoke<string>('shorten_url', { url }),
+  shortenUrlWith: (url: string, provider: string, credentials: ShortenCreds) =>
+    invoke<string>('shorten_url_with', { url, provider, credentials }),
+  grabPixels: () => invoke<{ dataUrl: string; width: number; height: number }>('grab_pixels'),
+  saveCaptureAs: (source: string) => invoke<string>('save_capture_as', { source }),
 
   isFlatpak: () => invoke<boolean>('is_flatpak'),
 

@@ -173,6 +173,14 @@ pub async fn run(
 
             Task::CopyLink => {}
 
+            // Handled before the loop in `after_upload` — the shortened URL
+            // must be what gets copied/opened/notified.
+            Task::ShortenUrl => {}
+
+            // The frontend shows the quick task menu when this task is
+            // enabled; nothing to do in the backend chain.
+            Task::QuickMenu => {}
+
             Task::Ocr => {
                 if !config.features.ocr {
                     log::debug!("skipping OCR task: the OCR feature is disabled");
@@ -222,7 +230,22 @@ pub async fn run(
 ///
 /// Returns the formatted link and whether it was copied to the clipboard.
 pub async fn after_upload(app: Option<&AppHandle>, config: &Config, url: &str) -> (String, bool) {
-    let link = config.upload.copy_format.format(url);
+    // Shorten first: the copy/open tasks below must see the short link.
+    let mut target = url.to_string();
+    if config
+        .after_upload_tasks()
+        .contains(&crate::config::Task::ShortenUrl)
+    {
+        let provider = crate::shorten::ShortenProvider::parse(&config.shorten.provider)
+            .unwrap_or(crate::shorten::ShortenProvider::Isgd);
+        let creds = crate::shorten::ShortenConfig::for_provider(config, provider);
+        match crate::shorten::shorten(&target, provider, &creds).await {
+            Ok(shortened) => target = shortened,
+            Err(err) => log::warn!("url shortening failed: {err}"),
+        }
+    }
+
+    let link = config.upload.copy_format.format(&target);
     let mut copied = false;
 
     for task in config.after_upload_tasks() {
@@ -235,7 +258,7 @@ pub async fn after_upload(app: Option<&AppHandle>, config: &Config, url: &str) -
                 }
             }
             Task::Notify => {
-                let body = format!("Uploaded · {url}");
+                let body = format!("Uploaded · {target}");
                 if let Some(app) = app {
                     let _ = app
                         .notification()
@@ -251,7 +274,7 @@ pub async fn after_upload(app: Option<&AppHandle>, config: &Config, url: &str) -
                 }
             }
             Task::Open => {
-                if let Err(err) = crate::commands::open_with(url) {
+                if let Err(err) = crate::commands::open_with(&target) {
                     log::warn!("could not open upload url: {err}");
                 }
             }

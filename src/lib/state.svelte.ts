@@ -98,6 +98,67 @@ export async function uploadFile(path: string): Promise<UploadOutcome | null> {
   }
 }
 
+/** Upload raw text through the configured destination. */
+export async function uploadText(text: string): Promise<UploadOutcome | null> {
+  if (app.uploading) return null;
+  app.uploading = true;
+  try {
+    const outcome = await api.uploadText(text);
+    app.lastUpload = outcome;
+    if (outcome.copied) {
+      toast(`Uploaded via ${outcome.uploader} — link copied`, 'success');
+    } else {
+      toast(`Uploaded via ${outcome.uploader}`, 'success');
+    }
+    return outcome;
+  } catch (err) {
+    toast(`Upload failed: ${err}`, 'error');
+    return null;
+  } finally {
+    app.uploading = false;
+  }
+}
+
+/** Download a URL and upload it through the configured destination. */
+export async function uploadUrl(url: string): Promise<UploadOutcome | null> {
+  if (app.uploading) return null;
+  app.uploading = true;
+  try {
+    const outcome = await api.uploadUrl(url);
+    app.lastUpload = outcome;
+    if (outcome.copied) {
+      toast(`Uploaded via ${outcome.uploader} — link copied`, 'success');
+    } else {
+      toast(`Uploaded via ${outcome.uploader}`, 'success');
+    }
+    return outcome;
+  } catch (err) {
+    toast(`Upload failed: ${err}`, 'error');
+    return null;
+  } finally {
+    app.uploading = false;
+  }
+}
+
+/** Upload every file in a folder; returns how many succeeded. */
+export async function uploadFolder(path: string): Promise<number> {
+  if (app.uploading) return 0;
+  app.uploading = true;
+  try {
+    const outcomes = await api.uploadFolder(path);
+    const last = outcomes[outcomes.length - 1];
+    if (last) app.lastUpload = last;
+    await reloadHistory();
+    toast(`Uploaded ${outcomes.length} file(s)`, 'success');
+    return outcomes.length;
+  } catch (err) {
+    toast(`Upload failed: ${err}`, 'error');
+    return 0;
+  } finally {
+    app.uploading = false;
+  }
+}
+
 export async function doCapture(kind: CaptureKind, options: CaptureOptions = {}) {
   if (app.busy) return;
   app.busy = true;
@@ -201,6 +262,18 @@ export async function stopRecording(): Promise<RecordingResult | null> {
   }
 }
 
+/** Abort the in-progress recording and discard it (ShareX parity). */
+export async function abortRecording() {
+  if (!app.recording) return;
+  try {
+    await api.abortRecording();
+    app.recording = null;
+    app.recordingStartedAt = null;
+    toast('Recording discarded', 'info');
+  } catch (err) {
+    toast(`Could not abort recording: ${err}`, 'error');
+  }
+}
 /** Load PulseAudio/PipeWire source devices for the settings pickers. */
 export async function loadAudioDevices() {
   try {

@@ -6,6 +6,8 @@
   import TaskChainEditor from './TaskChainEditor.svelte';
   import type { CaptureTask, Config, EffectKind } from '../types';
 
+  let { section = null, hideHeader = false }: { section?: string | null; hideHeader?: boolean } = $props();
+
   const initial = structuredClone($state.snapshot(app.config)) as Config;
   // Older config snapshots don't include the [features] table yet.
   if (!initial.features) initial.features = { ocr: true };
@@ -14,6 +16,11 @@
   onMount(() => {
     loadAudioDevices();
     initUpdates();
+    if (section) {
+      requestAnimationFrame(() => {
+        document.getElementById(section)?.scrollIntoView({ block: 'start' });
+      });
+    }
   });
 
   const systemDevices = $derived(app.audioDevices.filter((d) => d.monitor));
@@ -31,6 +38,7 @@
     'notify',
     // The "Run OCR" task only makes sense while the OCR feature is enabled.
     ...(draft.features?.ocr ? (['ocr'] as CaptureTask[]) : []),
+    'quickmenu',
   ]);
   const uploadTasks: CaptureTask[] = ['copyLink', 'notify', 'open'];
 
@@ -39,7 +47,13 @@
     { value: 'capture-fullscreen', label: 'Capture fullscreen' },
     { value: 'capture-window', label: 'Capture window' },
     { value: 'capture-scrolling', label: 'Capture scrolling' },
+    { value: 'capture-last-region', label: 'Capture last region' },
     { value: 'record-toggle', label: 'Toggle recording' },
+    { value: 'stop-recording', label: 'Stop recording' },
+    { value: 'abort-recording', label: 'Discard recording' },
+    { value: 'auto-capture-toggle', label: 'Toggle auto capture' },
+    { value: 'upload-last', label: 'Upload last capture' },
+    { value: 'pin-last', label: 'Pin last capture' },
     { value: 'open-editor', label: 'Open editor' },
   ];
 
@@ -57,6 +71,11 @@
     { value: 'roundedCorners', label: 'Rounded corners' },
     { value: 'blur', label: 'Blur' },
     { value: 'watermark', label: 'Watermark' },
+    { value: 'resize', label: 'Resize image' },
+    { value: 'grayscale', label: 'Grayscale' },
+    { value: 'sepia', label: 'Sepia' },
+    { value: 'adjust', label: 'Brightness / contrast' },
+    { value: 'rotate', label: 'Rotate / flip' },
   ];
 
   const watermarkPositions = [
@@ -166,13 +185,15 @@
 </script>
 
 <section class="view">
-  <header class="view-head">
-    <h1>Settings</h1>
-    <p class="sub">Changes are written to your ShareV config file.</p>
-  </header>
+  {#if !hideHeader}
+    <header class="view-head">
+      <h1>Settings</h1>
+      <p class="sub">Changes are written to your ShareV config file.</p>
+    </header>
+  {/if}
 
   <div class="cards">
-    <div class="card">
+    <div class="card" id="sec-output">
       <h2>Output</h2>
 
       <label class="field">
@@ -228,7 +249,7 @@
       </label>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-after-capture">
       <h2>After capture</h2>
       <p class="hint">Run these steps in order once an image is grabbed.</p>
 
@@ -252,7 +273,7 @@
       </p>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-after-upload">
       <h2>After upload</h2>
       <p class="hint">Run these steps once an upload succeeds.</p>
 
@@ -263,7 +284,7 @@
       />
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-ocr">
       <h2>OCR</h2>
       <p class="hint">
         Recognise text with Tesseract. Add the "Run OCR" task above to copy the result to the
@@ -318,7 +339,7 @@
       {/if}
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-scroll">
       <h2>Scrolling capture</h2>
       <p class="hint">
         A region is captured repeatedly while you scroll, then stitched into one tall image.
@@ -350,7 +371,7 @@
       </label>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-effects">
       <h2>Image effects</h2>
       <p class="hint">Applied to the saved capture, in the order listed.</p>
 
@@ -470,9 +491,57 @@
           </label>
         </fieldset>
       {/if}
+
+      {#if hasEffect('resize')}
+        <fieldset>
+          <legend>Resize image</legend>
+          <label class="field">
+            <span>Width (0 = auto)</span>
+            <input type="number" min="0" max="7680" bind:value={draft.effects.resize.width} />
+          </label>
+          <label class="field">
+            <span>Height (0 = auto)</span>
+            <input type="number" min="0" max="4320" bind:value={draft.effects.resize.height} />
+          </label>
+          <label class="check">
+            <input type="checkbox" bind:checked={draft.effects.resize.keepAspect} />
+            <span>Keep aspect ratio</span>
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('adjust')}
+        <fieldset>
+          <legend>Brightness / contrast</legend>
+          <label class="field">
+            <span>Brightness ({draft.effects.adjust.brightness})</span>
+            <input type="range" min="-100" max="100" step="1" bind:value={draft.effects.adjust.brightness} />
+          </label>
+          <label class="field">
+            <span>Contrast ({draft.effects.adjust.contrast.toFixed(2)}×)</span>
+            <input type="range" min="0" max="3" step="0.05" bind:value={draft.effects.adjust.contrast} />
+          </label>
+        </fieldset>
+      {/if}
+
+      {#if hasEffect('rotate')}
+        <fieldset>
+          <legend>Rotate / flip</legend>
+          <label class="field">
+            <span>Mode</span>
+            <select bind:value={draft.effects.rotate.mode}>
+              <option value="cw90">Rotate 90° clockwise</option>
+              <option value="cw180">Rotate 180°</option>
+              <option value="cw270">Rotate 90° counter-clockwise</option>
+              <option value="flipH">Flip horizontal</option>
+              <option value="flipV">Flip vertical</option>
+            </select>
+          </label>
+        </fieldset>
+      {/if}
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-uploads">
       <h2>Uploads</h2>
 
       <label class="field">
@@ -558,7 +627,7 @@
       {/if}
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-recording">
       <h2>Recording</h2>
 
       <label class="field">
@@ -624,7 +693,7 @@
       {/if}
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-hotkeys">
       <h2>Hotkeys</h2>
       <label class="check">
         <input type="checkbox" bind:checked={draft.hotkeys.enabled} />
@@ -666,7 +735,7 @@
       </p>
     </div>
 
-    <div class="card">
+    <div class="card" id="sec-updates">
       <h2>Updates</h2>
       <p class="hint">ShareV {updates.current || '…'}</p>
 
@@ -824,6 +893,9 @@
   .binding input {
     flex: 1;
     min-width: 0;
+  }
+  .binding > button {
+    flex-shrink: 0;
   }
   .actions {
     display: flex;

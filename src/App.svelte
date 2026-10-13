@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import MainToolbar from './lib/components/MainToolbar.svelte';
+  import MainWindow from './lib/components/MainWindow.svelte';
   import EditorWindow from './lib/components/EditorWindow.svelte';
   import PinView from './lib/components/PinView.svelte';
   import Toasts from './lib/components/Toasts.svelte';
@@ -49,6 +49,11 @@
       app.lastRecording = event.payload;
       reloadHistory();
     });
+    const unlistenAbort = listen('recording-aborted', () => {
+      app.recording = null;
+      app.recordingStartedAt = null;
+      toast('Recording discarded', 'info');
+    });
 
     // The `open-editor` hotkey action opens the editor in its own window.
     const unlistenEditor = listen('open-editor', () => {
@@ -56,6 +61,15 @@
         api.openEditor(app.last.path).catch((err) => toast(`Could not open editor: ${err}`, 'error'));
       }
     });
+
+    // Watch folders: new images arrive as history entries.
+    const unlistenWatchFile = listen<{ dir: string; path: string }>(
+      'watch-file',
+      (event) => {
+        toast(`Watch folder captured ${event.payload.path.split('/').pop()}`, 'success');
+        reloadHistory();
+      },
+    );
 
     // Auto-capture lifecycle events (also emitted when driven from the CLI).
     const unlistenAutoStart = listen<AutoCaptureInfo>('auto-capture-started', (event) => {
@@ -70,7 +84,9 @@
       unlisten.then((fn) => fn());
       unlistenStart.then((fn) => fn());
       unlistenStop.then((fn) => fn());
+      unlistenAbort.then((fn) => fn());
       unlistenEditor.then((fn) => fn());
+      unlistenWatchFile.then((fn) => fn());
       unlistenAutoStart.then((fn) => fn());
       unlistenAutoStop.then((fn) => fn());
     };
@@ -87,7 +103,7 @@
     {#if !app.ready}
       <div class="loading">Loading…</div>
     {:else}
-      <MainToolbar />
+      <MainWindow />
     {/if}
     <Toasts />
   </div>

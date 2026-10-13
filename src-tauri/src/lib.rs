@@ -19,9 +19,11 @@ pub mod portal_shortcuts;
 pub mod record;
 pub mod scroll;
 pub mod shortcuts;
+pub mod shorten;
 pub mod tasks;
 pub mod tray;
 pub mod upload;
+pub mod watch;
 pub mod wm;
 
 use std::sync::Mutex;
@@ -40,6 +42,9 @@ pub struct AppState {
     pub recording_pending: std::sync::atomic::AtomicBool,
     /// The in-progress auto-capture session, if any.
     pub auto: Mutex<Option<auto::AutoCaptureSession>>,
+    /// Geometry of the most recent interactive region capture, backing the
+    /// "Last region" action (ShareX parity).
+    pub last_region: Mutex<Option<crate::capture::Geometry>>,
 }
 
 pub fn load_config() -> Config {
@@ -70,6 +75,7 @@ pub fn run() {
             recorder: Mutex::new(None),
             recording_pending: std::sync::atomic::AtomicBool::new(false),
             auto: Mutex::new(None),
+            last_region: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
@@ -84,6 +90,23 @@ pub fn run() {
             commands::pin_capture,
             commands::pin_info,
             commands::pin_last,
+            commands::last_region,
+            commands::pick_file,
+            commands::pick_folder,
+            commands::hash_file,
+            commands::combine_images,
+            commands::qr_encode,
+            commands::qr_decode,
+            commands::metadata_image,
+            commands::watch_folder_add,
+            commands::watch_folder_remove,
+            commands::watch_folder_list,
+            commands::shorten_url,
+            commands::shorten_url_with,
+            commands::grab_pixels,
+            commands::save_capture_as,
+            commands::abort_recording,
+            commands::pause_recording,
             commands::diagnostics,
             commands::list_history,
             commands::delete_history,
@@ -103,6 +126,9 @@ pub fn run() {
             commands::apply_effects,
             commands::upload_path,
             commands::upload_last,
+            commands::upload_text,
+            commands::upload_url,
+            commands::upload_folder,
             commands::start_recording,
             commands::stop_recording,
             commands::recording_status,

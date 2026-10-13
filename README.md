@@ -201,6 +201,25 @@ above and press the key again, or wrap it in your own toggle script.
 Written to `~/.config/sharev/config.toml` on first run. History lives in
 `~/.local/share/sharev/history.json`.
 
+## Window manager integration
+
+The annotation editor opens in a small dialog window titled
+**ShareV Editor**. On Hyprland it floats itself automatically — no setup
+needed. Everywhere else, add a one-line rule to keep it floating instead of
+tiled (used automatically as a fallback where supported):
+
+```ini
+# Hyprland (hyprland.conf) — only needed on old releases without Lua dispatch
+windowrulev2 = float, title:^(ShareV Editor)$
+windowrulev2 = center, title:^(ShareV Editor)$
+windowrulev2 = size 880 620, title:^(ShareV Editor)$
+```
+
+```ini
+# Sway / i3 (config)
+for_window [title="ShareV Editor"] floating enable
+```
+
 ## Uploading
 
 Pick a destination under **Settings → Uploads**. Three uploaders are

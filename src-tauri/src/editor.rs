@@ -41,20 +41,24 @@ pub fn open_editor(app: &AppHandle, path: &str) -> Result<String> {
     );
 
     // Editor window: smaller than main, resizable, not fullscreen, no snap.
+    // Skip the taskbar: this is a transient quick-edit dialog. Tiling
+    // compositors (Hyprland, Sway, i3) don't float it on their own — the
+    // README documents a one-line float rule matching "ShareV Editor".
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("ShareV Editor")
-        .inner_size(900.0, 640.0)
-        .min_inner_size(600.0, 400.0)
+        .inner_size(880.0, 620.0)
+        .min_inner_size(620.0, 440.0)
         .resizable(true)
         .fullscreen(false)
         .decorations(true)
+        .skip_taskbar(true)
         .shadow(true);
 
     // Center the window on the current monitor.
     if let Ok(Some(monitor)) = app.primary_monitor() {
         let monitor_size = monitor.size();
-        let window_width = 900.0;
-        let window_height = 640.0;
+        let window_width = 880.0;
+        let window_height = 620.0;
         let x = (monitor_size.width as f64 - window_width) / 2.0;
         let y = (monitor_size.height as f64 - window_height) / 2.0;
         builder = builder.position(x, y);
@@ -71,7 +75,79 @@ pub fn open_editor(app: &AppHandle, path: &str) -> Result<String> {
         }
     });
 
+    // Tiling compositors would tile this quick-edit dialog. Ask Hyprland to
+    // float it instead — fully automatic, no user rules needed. Anything
+    // missing (not on Hyprland, no hyprctl) just keeps the tiling behavior.
+    float_on_hyprland(std::process::id());
+
     Ok(label)
+}
+
+/// Best-effort: float our freshly opened editor window on Hyprland.
+fn float_on_hyprland(pid: u32) {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
+        return;
+    }
+    std::thread::spawn(move || {
+        for _ in 0..20 {
+            if try_float_editor(pid) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        log::warn!("could not float the editor window on Hyprland; it will tile");
+    });
+}
+
+/// Find our still-tiled "ShareV Editor" window and toggle it floating.
+/// Returns true once the window is floating (or floating was requested).
+fn try_float_editor(pid: u32) -> bool {
+    let output = std::process::Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .ok();
+    let Some(output) = output else { return false };
+    let clients: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(clients) => clients,
+        Err(_) => return false,
+    };
+    let Some(clients) = clients.as_array() else {
+        return false;
+    };
+    // Newest first: an older editor window may already exist.
+    let target = clients.iter().rev().find(|client| {
+        client.get("pid").and_then(|p| p.as_u64()) == Some(u64::from(pid))
+            && client.get("title").and_then(|t| t.as_str()) == Some("ShareV Editor")
+            && client.get("floating").and_then(|f| f.as_bool()) == Some(false)
+    });
+    let Some(target) = target else {
+        // No tiled editor window of ours: either not mapped yet (keep
+        // polling) or every one of ours already floats (done).
+        let ours = clients.iter().filter(|client| {
+            client.get("pid").and_then(|p| p.as_u64()) == Some(u64::from(pid))
+                && client.get("title").and_then(|t| t.as_str()) == Some("ShareV Editor")
+        });
+        let mut ours = ours.peekable();
+        if ours.peek().is_none() {
+            return false;
+        }
+        return !ours.any(|client| {
+            client.get("floating").and_then(|f| f.as_bool()) == Some(false)
+        });
+    };
+    let Some(address) = target.get("address").and_then(|a| a.as_str()) else {
+        return false;
+    };
+    // Hyprland ≥0.55 speaks Lua dispatchers over hyprctl; the whole expression
+    // is a single argument.
+    let expression = format!(
+        "hl.dsp.window.float({{ action = \"set\", window = \"address:{address}\" }})"
+    );
+    std::process::Command::new("hyprctl")
+        .args(["dispatch", &expression])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 /// Look up the image associated with an editor window label.
